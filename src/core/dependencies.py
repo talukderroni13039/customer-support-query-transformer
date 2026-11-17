@@ -102,17 +102,6 @@ def get_retrieval_service(
     )
 
 
-def get_support_search_service(
-    retrieval_service: Annotated[RetrievalService, Depends(get_retrieval_service)],
-    keyword_index: Annotated[KeywordIndex, Depends(get_keyword_index)],
-) -> SupportSearchService:
-    return SupportSearchService(
-        retrieval_service=retrieval_service,
-        keyword_index=keyword_index,
-        default_top_k=env_int("DEFAULT_TOP_K", DEFAULT_TOP_K),
-    )
-
-
 def get_query_service(
     rewriter: Annotated[QueryRewriter | None, Depends(get_rewriter)],
 ) -> QueryService:
@@ -120,4 +109,17 @@ def get_query_service(
         rewriter=rewriter,
         max_history_messages=env_int("MAX_HISTORY_MESSAGES", DEFAULT_MAX_HISTORY_MESSAGES),
         strict=env_bool("REWRITE_STRICT", False),
+    )
+
+
+def get_support_search_service(
+    query_service: Annotated[QueryService, Depends(get_query_service)],
+    retrieval_service: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    keyword_index: Annotated[KeywordIndex, Depends(get_keyword_index)],
+) -> SupportSearchService:
+    return SupportSearchService(
+        query_service=query_service,
+        retrieval_service=retrieval_service,
+        keyword_index=keyword_index,
+        default_top_k=env_int("DEFAULT_TOP_K", DEFAULT_TOP_K),
     )

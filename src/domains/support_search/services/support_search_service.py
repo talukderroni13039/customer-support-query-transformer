@@ -1,16 +1,19 @@
 """Orchestrates the pipeline: query → retrieval → group chunks by article."""
 
 import logging
+import time
 
 from src.core.exceptions import KnowledgeBaseEmptyError, RerankerUnavailableError
 from src.core.schemas.chunk import chunk_body
 from src.domains.support_search.schemas.search_schemas import (
-    QueryMode,
+    RetrievalMode,
     RetrievedArticle,
+    ScoreType,
     SearchRequest,
     StageDebug,
     SupportSearchResult,
 )
+from src.domains.support_search.services.query_service import QueryService
 from src.domains.support_search.services.retrieval_service import RankedChunk, RetrievalService
 from src.keyword_search.base import KeywordIndex
 
@@ -18,6 +21,12 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_TOP_K = 3
 SNIPPET_MAX_CHARS = 300
+
+_BASE_SCORE_TYPE = {
+    RetrievalMode.VECTOR: ScoreType.COSINE,
+    RetrievalMode.KEYWORD: ScoreType.BM25,
+    RetrievalMode.HYBRID: ScoreType.RRF,
+}
 
 
 def make_snippet(chunk: RankedChunk) -> str:
@@ -67,45 +76,68 @@ def group_by_article(
 class SupportSearchService:
     def __init__(
         self,
+        query_service: QueryService,
         retrieval_service: RetrievalService,
         keyword_index: KeywordIndex,
         default_top_k: int = DEFAULT_TOP_K,
     ) -> None:
+        self._query = query_service
         self._retrieval = retrieval_service
         self._keyword_index = keyword_index
         self._default_top_k = default_top_k
 
     async def search(self, request: SearchRequest) -> SupportSearchResult:
+        started = time.perf_counter()
+        # Cheap checks first, so a request that cannot succeed never costs an LLM call.
         if self._keyword_index.size() == 0:  # BM25 mirrors the store, and this check is free
             raise KnowledgeBaseEmptyError()
-
         if request.rerank and not self._retrieval.rerank_available:
             raise RerankerUnavailableError()
 
-        # Query stage: only `question_only` exists so far; the rewriter arrives later.
-        search_query = request.question
-        outcome = await self._retrieval.retrieve(search_query, request.retrieval, request.rerank)
-        results = group_by_article(
-            outcome.chunks, request.top_k or self._default_top_k, request.include_debug
+        # 1. Query stage
+        plan = await self._query.build_query(request.question, request.history, request.query_mode)
+        query_ms = (time.perf_counter() - started) * 1000
+
+        result = SupportSearchResult(
+            question=request.question,
+            search_query=plan.search_query,
+            query_mode=request.query_mode,
+            retrieval=request.retrieval,
+            rerank=request.rerank,
+            needs_retrieval=plan.needs_retrieval,
+            rewrite_source=plan.rewrite_source,
+            rewrite_fallback=plan.rewrite_fallback,
+            score_type=ScoreType.RERANK if request.rerank else _BASE_SCORE_TYPE[request.retrieval],
+            results=[],
         )
+
+        if plan.needs_retrieval:
+            # 2. Retrieval stage (vector / keyword / hybrid + RRF, then rerank)
+            outcome = await self._retrieval.retrieve(
+                plan.search_query, request.retrieval, request.rerank
+            )
+            # 3. Group by article
+            result.results = group_by_article(
+                outcome.chunks, request.top_k or self._default_top_k, request.include_debug
+            )
+            result.rerank_fallback = outcome.rerank_fallback
+            result.score_type = outcome.score_type
+
         logger.info(
             "search completed",
             extra={
                 "question_chars": len(request.question),
                 "history_items": len(request.history),
+                "query_mode": request.query_mode.value,
                 "retrieval": request.retrieval.value,
                 "rerank": request.rerank,
-                "rerank_fallback": outcome.rerank_fallback,
-                "results": len(results),
+                "needs_retrieval": plan.needs_retrieval,
+                "rewrite_source": plan.rewrite_source,
+                "rewrite_fallback": plan.rewrite_fallback,
+                "rerank_fallback": result.rerank_fallback,
+                "results": len(result.results),
+                "query_ms": round(query_ms, 1),
+                "total_ms": round((time.perf_counter() - started) * 1000, 1),
             },
         )
-        return SupportSearchResult(
-            question=request.question,
-            search_query=search_query,
-            query_mode=QueryMode.QUESTION_ONLY,
-            retrieval=request.retrieval,
-            rerank=request.rerank,
-            rerank_fallback=outcome.rerank_fallback,
-            score_type=outcome.score_type,
-            results=results,
-        )
+        return result

@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from src.core.exceptions import LLMBudgetExhaustedError, LLMTimeoutError
 from src.core.lifespan import AppResources
 from tests.integration.test_articles_api import err, ok
 
@@ -202,3 +203,136 @@ def test_reranker_failure_falls_back_and_is_flagged(
     assert data["score_type"] == "rrf"
     assert data["results"]
     assert ok(seeded_client.get("/health"))["reranker_loaded"] is True
+
+
+# --- query modes (full pipeline) -------------------------------------------------------------
+
+HISTORY = [
+    "Do you sell the Trailblazer jacket in waterproof?",
+    "Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof.",
+]
+FOLLOW_UP = "How long do I have to return it?"
+
+
+def test_default_request_runs_rewrite_hybrid_rerank(
+    seeded_client: TestClient, resources: AppResources
+) -> None:
+    resources.rewriter.standalone_query = "Can jackets be returned within 60 days of delivery"  # type: ignore[union-attr]
+    data = ok(search(seeded_client, question=FOLLOW_UP, history=HISTORY))
+    assert data["question"] == FOLLOW_UP
+    assert data["search_query"] == "Can jackets be returned within 60 days of delivery"
+    assert data["query_mode"] == "rewrite"
+    assert data["retrieval"] == "hybrid"
+    assert data["rerank"] is True
+    assert data["needs_retrieval"] is True
+    assert data["rewrite_source"] == "llm"
+    assert data["rewrite_fallback"] is False
+    assert data["rerank_fallback"] is False
+    assert data["score_type"] == "rerank"
+    assert data["results"][0]["title"] == "Returns for Outerwear"
+    assert resources.rewriter.calls == [(FOLLOW_UP, HISTORY)]  # type: ignore[union-attr]
+
+
+def test_query_mode_baselines(seeded_client: TestClient, resources: AppResources) -> None:
+    naive = ok(
+        search(seeded_client, question=FOLLOW_UP, history=HISTORY, query_mode="question_only")
+    )
+    assert naive["search_query"] == FOLLOW_UP
+    assert naive["rewrite_source"] == "none"
+    full = ok(search(seeded_client, question=FOLLOW_UP, history=HISTORY, query_mode="full_history"))
+    assert full["search_query"] == "\n".join([*HISTORY, FOLLOW_UP])
+    assert resources.rewriter.calls == []  # type: ignore[union-attr]
+
+
+def test_empty_history_skips_claude(seeded_client: TestClient, resources: AppResources) -> None:
+    data = ok(search(seeded_client, question="shipping to Canada"))
+    assert data["rewrite_source"] == "skipped"
+    assert data["results"][0]["title"] == "Shipping to Canada"
+    assert resources.rewriter.calls == []  # type: ignore[union-attr]
+
+
+def test_hundred_history_items_accepted_and_only_last_twelve_sent(
+    seeded_client: TestClient, resources: AppResources
+) -> None:
+    history = [f"message {i}" for i in range(100)]
+    ok(search(seeded_client, question=FOLLOW_UP, history=history))
+    sent = resources.rewriter.calls[0][1]  # type: ignore[union-attr]
+    assert sent == history[-12:]
+
+
+def test_small_talk_returns_no_results(seeded_client: TestClient, resources: AppResources) -> None:
+    resources.rewriter.needs_retrieval = False  # type: ignore[union-attr]
+    data = ok(search(seeded_client, question="Thanks, that's all!", history=HISTORY))
+    assert data["needs_retrieval"] is False
+    assert data["results"] == []
+    assert data["search_query"] == ""
+
+
+def test_rewrite_failure_never_fails_the_search(
+    seeded_client: TestClient, resources: AppResources
+) -> None:
+    resources.rewriter.error = LLMTimeoutError()  # type: ignore[union-attr]
+    data = ok(search(seeded_client, question=FOLLOW_UP, history=HISTORY))
+    assert data["rewrite_fallback"] is True
+    assert data["rewrite_source"] == "fallback"
+    assert data["search_query"] == FOLLOW_UP
+    assert data["results"]
+
+
+def test_rewrite_disabled_provider_is_flagged(
+    seeded_client: TestClient, resources: AppResources
+) -> None:
+    resources.rewriter = None
+    resources.rewrite_provider = "none"
+    data = ok(search(seeded_client, question=FOLLOW_UP, history=HISTORY))
+    assert data["rewrite_source"] == "disabled"
+    assert data["rewrite_fallback"] is True
+    assert ok(seeded_client.get("/health"))["rewrite_provider"] == "none"
+
+
+def test_strict_mode_surfaces_llm_errors_as_504_and_502(
+    seeded_client: TestClient, resources: AppResources, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("REWRITE_STRICT", "true")
+    resources.rewriter.error = LLMTimeoutError()  # type: ignore[union-attr]
+    err(search(seeded_client, question=FOLLOW_UP, history=HISTORY), 504, "LLM_TIMEOUT")
+    resources.rewriter.error = LLMBudgetExhaustedError()  # type: ignore[union-attr]
+    error = err(
+        search(seeded_client, question=FOLLOW_UP, history=HISTORY), 502, "LLM_BUDGET_EXHAUSTED"
+    )
+    assert error["message"] == "LLM budget exhausted."
+
+
+def test_search_runs_while_bm25_is_rebuilt(
+    seeded_client: TestClient, resources: AppResources
+) -> None:
+    """A search during an index rebuild must never error (atomic swap)."""
+    import threading
+
+    chunks = resources.vector_store.get_all_chunks()
+    stop = threading.Event()
+    failures: list[BaseException] = []
+
+    def rebuild_loop() -> None:
+        try:
+            while not stop.is_set():
+                resources.keyword_index.rebuild(chunks)
+                resources.keyword_index.rebuild(chunks[:2])
+        except BaseException as exc:
+            failures.append(exc)
+
+    thread = threading.Thread(target=rebuild_loop)
+    thread.start()
+    try:
+        for _ in range(25):
+            response = search(
+                seeded_client, question="waterproof shell jacket", query_mode="question_only"
+            )
+            assert response.status_code in (200, 409), (
+                response.text
+            )  # 409 only if momentarily empty
+            assert response.status_code == 200
+    finally:
+        stop.set()
+        thread.join(timeout=10)
+    assert failures == []

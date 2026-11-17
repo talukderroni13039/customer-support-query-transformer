@@ -41,3 +41,25 @@ def test_lifespan_builds_resources_and_bm25_from_chroma(
         assert health["status"] == "ok"
         assert health["keyword_index_chunks"] == 1
         assert len(client.get("/api/v1/support/articles").json()["data"]) == 1
+
+
+def test_build_rewriter_provider_selection(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from src.llm.cached_rewriter import CachedRewriter
+
+    monkeypatch.setenv("REWRITE_PROVIDER", "none")
+    assert lifespan_module.build_rewriter() == (None, "none")
+
+    monkeypatch.setenv("REWRITE_PROVIDER", "anthropic")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert lifespan_module.build_rewriter() == (None, "none")  # no key → rewrite falls back
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key-not-real")
+    monkeypatch.setenv("REWRITE_CACHE_PATH", str(tmp_path / "rewrites.json"))
+    monkeypatch.setenv("LLM_BUDGET_PATH", str(tmp_path / "budget.json"))
+    rewriter, provider = lifespan_module.build_rewriter()
+    assert provider == "anthropic"
+    assert isinstance(rewriter, CachedRewriter)  # the real rewriter is wrapped by the cache
+
+    monkeypatch.setenv("REWRITE_PROVIDER", "openai")
+    with pytest.raises(ValueError, match="REWRITE_PROVIDER"):
+        lifespan_module.build_rewriter()
