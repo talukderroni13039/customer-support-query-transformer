@@ -122,6 +122,121 @@ Response `data` (`SupportSearchResult`): `question`, `search_query`, `query_mode
 
 A failed rewrite never fails a search (falls back to the question, `rewrite_fallback: true`). A failed reranker returns the fused order (`rerank_fallback: true`).
 
-## Setup, usage, and benchmark
+## Setup (PowerShell)
 
-See the sections below (completed in the final build step).
+Requirements: [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 for you) and, for the rewrite stage, an Anthropic API key.
+
+```powershell
+uv sync                                   # install from uv.lock (CPU-only torch)
+Copy-Item .env.example .env.dev           # then put your key in ANTHROPIC_API_KEY
+uv run python -m scripts.seed_kb          # load the 40 starter articles from data/kb
+$env:APP_ENV = "dev"; uv run uvicorn src.main:app --reload
+```
+
+Open http://127.0.0.1:8000/docs. The first start downloads `BAAI/bge-small-en-v1.5` (~130 MB) and `BAAI/bge-reranker-base` (~1.1 GB) into the Hugging Face cache; afterwards set `HF_HUB_OFFLINE=1` in `.env.dev`.
+
+Environment is loaded from `.env.{APP_ENV}` (`.env.dev`, `.env.uat`), both gitignored. Every non-secret value has a default in code; `.env.example` lists them all. Without a key, or with `REWRITE_PROVIDER=none`, everything works except the rewrite (searches fall back to the question and report `rewrite_fallback: true`).
+
+## Try it (PowerShell)
+
+```powershell
+$base = "http://127.0.0.1:8000/api/v1/support"
+
+# Create, read, update, delete an article
+$body = @{ title = "Snowshoe Rental"; category = "rentals"
+           content = "## Prices`nRent MSR-EVO-9 snowshoes for 15 dollars per day at the flagship store." } | ConvertTo-Json
+$created = Invoke-RestMethod "$base/articles" -Method Post -ContentType "application/json" -Body $body
+$id = $created.data.id
+Invoke-RestMethod "$base/articles/$id"
+Invoke-RestMethod "$base/articles?category=rentals"
+Invoke-RestMethod "$base/articles/$id" -Method Put -ContentType "application/json" -Body $body
+Invoke-RestMethod "$base/articles/$id" -Method Delete
+
+# Search: the full pipeline (rewrite → hybrid → rerank)
+$search = @{
+  question = "How long do I have to return it?"
+  history  = @("Do you sell the Trailblazer jacket in waterproof?",
+               "Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof.")
+  include_debug = $true
+} | ConvertTo-Json
+(Invoke-RestMethod "$base/search" -Method Post -ContentType "application/json" -Body $search).data
+```
+
+Change one switch at a time (in Swagger or in the body above) and compare `search_query`, `score_type`, and the debug ranks:
+
+| Body | Pipeline | `score_type` |
+|---|---|---|
+| `"query_mode": "question_only", "retrieval": "vector", "rerank": false` | naive vector search | `cosine` |
+| `"query_mode": "question_only", "retrieval": "keyword", "rerank": false` | BM25 only | `bm25` |
+| `"query_mode": "question_only", "retrieval": "hybrid", "rerank": false` | vector + BM25 fused with RRF | `rrf` |
+| `"query_mode": "full_history", "retrieval": "vector", "rerank": false` | naive with the last 12 history items pasted in | `cosine` |
+| `"query_mode": "rewrite", "retrieval": "hybrid", "rerank": false` | Claude rewrite + hybrid | `rrf` |
+| `"query_mode": "rewrite", "retrieval": "hybrid", "rerank": true` (defaults) | full pipeline | `rerank` |
+
+`rewrite_source` tells you what the query stage did: `llm`, `cache`, `skipped` (no history, Claude not called), `fallback` (Claude failed), `disabled` (no provider or key), or `none` (a baseline `query_mode`).
+
+## Benchmark
+
+`uv run python -m scripts.run_benchmark` runs the 33 eval conversations through six configurations and regenerates the tables in [`docs/BENCHMARK.md`](docs/BENCHMARK.md). Summary of the committed run (30 retrieval cases, 3 small-talk cases):
+
+| # | Config | hit@1 | hit@3 | MRR | small talk | avg latency |
+|---|---|---|---|---|---|---|
+| 1 | Naive (question only, vector) | 0.63 | 0.83 | 0.767 | 0/3 | ~0.1 s |
+| 3 | + Rewrite | 0.70 | 0.97 | 0.831 | 3/3 | ~0.8 s |
+| 4 | + Hybrid (BM25 + RRF) | 0.80 | 0.93 | 0.870 | 3/3 | ~0.8 s |
+| 5 | Full pipeline (+ rerank) | 0.77 | 0.97 | 0.864 | 3/3 | ~3.3 s |
+
+- The rewrite fixes follow-ups (follow-up hit@1 0.53 → 0.65, corrections 0.50 → 1.00) and detects small talk.
+- BM25 fixes exact product codes (`exact_code` hit@1 0.80 → 1.00).
+- Reranking improves hit@3 but **not** hit@1 or MRR on this set, and it pushes p95 latency to about 4.7 s on the laptop CPU used, above the 3 s target. Both shortfalls, their causes, and the options are explained in `docs/BENCHMARK.md`.
+
+## Cost and latency notes
+
+- Claude is called only for `query_mode: "rewrite"` with non-empty history, with at most the last 12 history items, and results are cached in `data/cache/rewrites.json` (keys are hashes; the question and history are not written to disk).
+- A hard cap on real Claude calls is enforced in code: every HTTP attempt increments `data/cache/llm_call_budget.json`, and at `LLM_CALL_BUDGET` (50) the rewriter refuses with "LLM budget exhausted" and searches fall back to the question. The whole build used 33 calls. Raise `LLM_CALL_BUDGET` or delete that one file to reset the counter for your own use.
+- Reranking is the slow stage on CPU (about 0.3 s per candidate on a 12th-gen i5 laptop). `RERANK_CANDIDATES` trades quality for latency; `"rerank": false` skips it per request; `RERANK_ENABLED=false` skips loading the model.
+- Questions, history, and article content are never logged; logs carry lengths, modes, counts, timings, and a request ID.
+
+## Tests and quality gates
+
+```powershell
+uv run ruff check .
+uv run ruff format --check .
+uv run mypy src
+uv run pytest                      # 186 tests, fakes only: no API calls, no model downloads
+uv run pytest -m model --no-cov    # real models (downloads on first run); run once
+uv run pytest -m live --no-cov     # 5 real Claude calls (up to 10 with retries); run once
+uv run pre-commit install          # optional: run ruff + mypy before each commit
+```
+
+## Docker
+
+```powershell
+docker build -t support-query-transformer .
+docker run --rm -p 8000:8000 --env-file .env.uat `
+  -v sqt-chroma:/app/data/chroma `
+  -v sqt-hf:/home/app/.cache/huggingface `
+  support-query-transformer
+# seed the container's knowledge base (once per chroma volume)
+docker run --rm --env-file .env.uat -v sqt-chroma:/app/data/chroma -v sqt-hf:/home/app/.cache/huggingface `
+  support-query-transformer python -m scripts.seed_kb
+```
+
+The image is multi-stage, CPU-only, and runs as a non-root user. The vector index and the Hugging Face model cache live in volumes; `.env*` files are never copied into the image. `GET /health` reports `embedding_model_loaded`, `reranker_loaded`, `vector_store`, `keyword_index_chunks`, and `rewrite_provider`.
+
+## Project layout
+
+```
+src/
+  main.py, api_router.py         app creation, central /api/v1 router
+  core/                          DI providers, lifespan, exceptions + ONE handler, middleware, envelope
+  domains/support_search/        routers/ schemas/ services/ prompts/ chunking/
+  llm/ embeddings/ vectorstore/ keyword_search/ reranking/    Protocol (base.py) + one implementation each
+  utils/                         rank_fusion.py (RRF), hashing.py, env.py
+scripts/                         seed_kb.py, run_benchmark.py
+data/kb/, data/eval/             starter articles and eval conversations (committed)
+tests/                           unit/, integration/, model/ (marker), live/ (marker), fakes.py
+docs/                            DECISIONS.md (deviations from the design doc), BENCHMARK.md
+```
+
+Conventions and "how to extend" notes are in [`CLAUDE.md`](CLAUDE.md); the design baseline is [`support-query-transformer-workflow.md`](support-query-transformer-workflow.md).

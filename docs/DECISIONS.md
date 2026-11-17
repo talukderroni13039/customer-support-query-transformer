@@ -11,3 +11,18 @@ Deviations from `support-query-transformer-workflow.md` on non-binding points. O
 | 5 | torch comes from the PyTorch CPU index via `[tool.uv.sources]` | CPU-only wheels on every platform; keeps the Docker image free of CUDA libraries |
 | 6 | Request-ID middleware is pure ASGI, not `BaseHTTPMiddleware` | Current Starlette guidance; no response-streaming or contextvar pitfalls |
 | 7 | Services are `async` and push Protocol calls through `asyncio.to_thread` | Protocols stay synchronous (as in doc 5.2) while CPU-bound work never blocks the event loop |
+| 8 | Dependency is `instructor[anthropic]`, which pins `anthropic==0.93.0`, not the latest Anthropic SDK | It is the only SDK version Instructor 1.17 declares support for; a mismatch could not be debugged under the 50-call cap |
+| 9 | BM25 uses a `BM25Okapi` subclass with the Lucene IDF `ln(1 + (N - n + 0.5) / (n + 0.5))` | Stock rank_bm25 IDF is zero or negative for terms in half or more of the chunks, so true matches score ≤ 0 on a small knowledge base |
+| 10 | Tokenizer keeps hyphenated tokens whole only when they contain a digit (`tb-pro-22`); `water-resistant` is split | Codes stay exact, while ordinary hyphenated words still match their unhyphenated spelling |
+| 11 | ChromaDB collection uses `configuration={"hnsw": {"space": "cosine"}}` and `embedding_function=None` | Current ChromaDB 1.x API; embeddings are always supplied, so the default ONNX embedding model is never downloaded |
+| 12 | Chunks are stored as raw contiguous slices, heading line included | `"".join(chunks) == content`, so `GET /articles/{id}` rebuilds the article exactly; the heading line is dropped only when building the embedded / BM25 / reranker text |
+| 13 | LLM calls are counted in an httpx request hook, and the SDK keeps one transport retry | Counts every real HTTP attempt (Instructor retries and SDK retries for 429/5xx alike); the first live run failed twice on transient provider errors with SDK retries off |
+| 14 | In Instructor 1.17 `max_retries=N` means N retries after the first attempt | Differs from the older "total attempts" meaning; live tests with `max_retries=1` can make up to 2 calls each |
+| 15 | With `rerank: true` the result contains only the reranked candidates (top `RERANK_CANDIDATES` chunks) | Rerank scores and fused scores are not comparable, so un-reranked chunks are not appended below reranked ones |
+| 16 | `rewrite_source` has values `none`, `skipped`, `llm`, `cache`, `fallback`, `disabled`; a missing API key or `REWRITE_PROVIDER=none` yields `disabled` with `rewrite_fallback: true` | The doc only shows `llm`; clients need to tell a skipped rewrite from a failed or disabled one |
+| 17 | `RewrittenQuery.from_cache` is a `SkipJsonSchema` field excluded from dumps | Lets the cache decorator report cache hits through the same Protocol without exposing the field to Claude |
+| 18 | The rewrite cache stores hashed keys plus the rewritten query and the original call latency, never the question or history | Privacy (conversations are never stored) and honest benchmark latency on cached re-runs |
+| 19 | Benchmark runs on an in-memory ChromaDB seeded from `data/kb`, and requests `top_k=10` | Reproducible without touching `data/chroma`; MRR needs ranks beyond 3 |
+| 20 | `top_k` in the request is optional and defaults to `DEFAULT_TOP_K` on the server | Honors the env default from doc section 8 instead of hardcoding 3 in the schema |
+| 21 | Added `LLM_BUDGET_PATH` env variable | The budget file location must be configurable for tests and containers |
+| 22 | The KB-empty and reranker-disabled checks run before the query stage | A request that cannot succeed must never cost a Claude call |
