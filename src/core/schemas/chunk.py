@@ -3,17 +3,23 @@
 from pydantic import BaseModel, ConfigDict
 
 
+def chunk_body(heading: str, text: str) -> str:
+    """Raw chunk text without its own heading line, stripped."""
+    body = text.strip()
+    if heading and body.startswith("#"):
+        first_line, _, rest = body.partition("\n")
+        if first_line.lstrip("#").strip() == heading:
+            body = rest.strip()
+    return body
+
+
 def compose_index_text(title: str, heading: str, text: str) -> str:
     """Text used for embedding, BM25, and reranking: `"{title} — {heading}: {chunk}"`.
 
     The stored chunk keeps its raw text (including the heading line) so the article can be
     rebuilt exactly; here the heading line is dropped from the body to avoid repeating it.
     """
-    body = text.strip()
-    if heading and body.startswith("#"):
-        first_line, _, rest = body.partition("\n")
-        if first_line.lstrip("#").strip() == heading:
-            body = rest.strip()
+    body = chunk_body(heading, text)
     prefix = f"{title} — {heading}" if heading else title
     return f"{prefix}: {body}"
 

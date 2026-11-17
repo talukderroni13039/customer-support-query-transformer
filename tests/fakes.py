@@ -70,3 +70,25 @@ def chunk_metadata(
         "created_at": stamp,
         "updated_at": stamp,
     }
+
+
+class Spy:
+    """Transparent proxy that records which methods were called (and their arguments)."""
+
+    def __init__(self, target: Any) -> None:
+        self._target = target
+        self.calls: list[tuple[str, tuple[Any, ...]]] = []
+
+    def __getattr__(self, name: str) -> Any:
+        attribute = getattr(self._target, name)
+        if not callable(attribute):
+            return attribute
+
+        def recorder(*args: Any, **kwargs: Any) -> Any:
+            self.calls.append((name, args))
+            return attribute(*args, **kwargs)
+
+        return recorder
+
+    def called(self, name: str) -> int:
+        return sum(1 for call_name, _ in self.calls if call_name == name)

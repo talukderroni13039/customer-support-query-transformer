@@ -4,7 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Path, Query, Request, status
 
-from src.core.dependencies import get_article_service
+from src.core.dependencies import get_article_service, get_support_search_service
 from src.core.middleware import build_meta
 from src.core.schemas.api_response import ApiResponse, ErrorResponse
 from src.domains.support_search.schemas.article_schemas import (
@@ -14,7 +14,9 @@ from src.domains.support_search.schemas.article_schemas import (
     ArticleSummary,
     ArticleUpdate,
 )
+from src.domains.support_search.schemas.search_schemas import SearchRequest, SupportSearchResult
 from src.domains.support_search.services.article_service import ArticleService
+from src.domains.support_search.services.support_search_service import SupportSearchService
 
 router = APIRouter(
     prefix="/support",
@@ -22,6 +24,7 @@ router = APIRouter(
 )
 
 ArticleServiceDep = Annotated[ArticleService, Depends(get_article_service)]
+SearchServiceDep = Annotated[SupportSearchService, Depends(get_support_search_service)]
 ArticleId = Annotated[
     str, Path(pattern=r"^[A-Za-z0-9._-]{1,64}$", description="Article ID", examples=["KB-012"])
 ]
@@ -85,3 +88,15 @@ async def delete_article(
     article_id: ArticleId, request: Request, service: ArticleServiceDep
 ) -> ApiResponse[ArticleDeleteResult]:
     return ApiResponse(data=await service.delete(article_id), meta=build_meta(request))
+
+
+@router.post(
+    "/search",
+    tags=["search"],
+    summary="Find support articles for a question (rewrite, hybrid retrieval, rerank)",
+    responses={409: {"model": ErrorResponse}},
+)
+async def search(
+    payload: SearchRequest, request: Request, service: SearchServiceDep
+) -> ApiResponse[SupportSearchResult]:
+    return ApiResponse(data=await service.search(payload), meta=build_meta(request))

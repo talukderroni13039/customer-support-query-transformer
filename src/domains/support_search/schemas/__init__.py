@@ -5,6 +5,15 @@ from src.domains.support_search.schemas.article_schemas import (
     ArticleSummary,
     ArticleUpdate,
 )
+from src.domains.support_search.schemas.search_schemas import (
+    QueryMode,
+    RetrievalMode,
+    RetrievedArticle,
+    ScoreType,
+    SearchRequest,
+    StageDebug,
+    SupportSearchResult,
+)
 
 __all__ = [
     "ArticleCreate",
@@ -12,4 +21,11 @@ __all__ = [
     "ArticleResult",
     "ArticleSummary",
     "ArticleUpdate",
+    "QueryMode",
+    "RetrievalMode",
+    "RetrievedArticle",
+    "ScoreType",
+    "SearchRequest",
+    "StageDebug",
+    "SupportSearchResult",
 ]
