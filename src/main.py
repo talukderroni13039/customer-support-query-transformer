@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from src.api_router import api_router
 from src.core.exception_handlers import register_exception_handlers
 from src.core.health import health_router
+from src.core.lifespan import lifespan
 from src.core.logging import configure_logging
 from src.core.middleware import RequestContextMiddleware
 from src.utils.env import env_str
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
         title="Customer Support Query Transformer",
         description="Rewrite → hybrid retrieval (vector + BM25 + RRF) → rerank.",
         version="0.1.0",
+        lifespan=lifespan,
     )
     app.add_middleware(RequestContextMiddleware)
     register_exception_handlers(app)
