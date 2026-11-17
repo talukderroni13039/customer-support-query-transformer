@@ -43,6 +43,6 @@ async def health(
         reranker_loaded=resources.reranker is not None,
         vector_store="ok" if vector_store_ok else "error",
         keyword_index_chunks=resources.keyword_index.size(),
-        rewrite_provider="none",
+        rewrite_provider=resources.rewrite_provider,
     )
     return ApiResponse(data=result, meta=build_meta(request))

@@ -9,6 +9,7 @@ from typing import Any
 import chromadb
 
 from src.core.schemas.chunk import ChunkHit
+from src.domains.support_search.schemas.rewrite_schemas import RewrittenQuery
 from src.vectorstore.chroma_store import ChromaStore
 
 _WORD = re.compile(r"[a-z0-9]+")
@@ -114,3 +115,27 @@ class FakeReranker:
             for hit in candidates
         ]
         return sorted(rescored, key=lambda hit: hit.score, reverse=True)
+
+
+class FakeRewriter:
+    """Returns a scripted rewrite and records every call. Never touches the network."""
+
+    def __init__(
+        self,
+        standalone_query: str = "rewritten query",
+        needs_retrieval: bool = True,
+        error: Exception | None = None,
+    ) -> None:
+        self.standalone_query = standalone_query
+        self.needs_retrieval = needs_retrieval
+        self.error = error
+        self.calls: list[tuple[str, list[str]]] = []
+
+    async def rewrite(self, question: str, history: list[str]) -> RewrittenQuery:
+        self.calls.append((question, list(history)))
+        if self.error is not None:
+            raise self.error
+        return RewrittenQuery(
+            needs_retrieval=self.needs_retrieval,
+            standalone_query=self.standalone_query if self.needs_retrieval else "",
+        )

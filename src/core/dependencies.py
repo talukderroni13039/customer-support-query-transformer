@@ -8,6 +8,10 @@ from src.core.exceptions import ModelNotReadyError
 from src.core.lifespan import AppResources
 from src.domains.support_search.chunking.article_chunker import DEFAULT_CHUNK_MAX_CHARS
 from src.domains.support_search.services.article_service import ArticleService
+from src.domains.support_search.services.query_service import (
+    DEFAULT_MAX_HISTORY_MESSAGES,
+    QueryService,
+)
 from src.domains.support_search.services.retrieval_service import (
     DEFAULT_CANDIDATES_PER_RETRIEVER,
     DEFAULT_RERANK_CANDIDATES,
@@ -19,8 +23,9 @@ from src.domains.support_search.services.support_search_service import (
 )
 from src.embeddings.base import Embedder
 from src.keyword_search.base import KeywordIndex
+from src.llm.base import QueryRewriter
 from src.reranking.base import Reranker
-from src.utils.env import env_int
+from src.utils.env import env_bool, env_int
 from src.utils.rank_fusion import DEFAULT_RRF_K
 from src.vectorstore.base import VectorStore
 
@@ -56,6 +61,11 @@ def get_keyword_index(resources: ResourcesDep) -> KeywordIndex:
 def get_reranker(resources: ResourcesDep) -> Reranker | None:
     """None when reranking is disabled (RERANK_ENABLED=false)."""
     return resources.reranker
+
+
+def get_rewriter(resources: ResourcesDep) -> QueryRewriter | None:
+    """None when the rewrite provider is disabled or has no API key."""
+    return resources.rewriter
 
 
 def get_article_service(
@@ -100,4 +110,14 @@ def get_support_search_service(
         retrieval_service=retrieval_service,
         keyword_index=keyword_index,
         default_top_k=env_int("DEFAULT_TOP_K", DEFAULT_TOP_K),
+    )
+
+
+def get_query_service(
+    rewriter: Annotated[QueryRewriter | None, Depends(get_rewriter)],
+) -> QueryService:
+    return QueryService(
+        rewriter=rewriter,
+        max_history_messages=env_int("MAX_HISTORY_MESSAGES", DEFAULT_MAX_HISTORY_MESSAGES),
+        strict=env_bool("REWRITE_STRICT", False),
     )

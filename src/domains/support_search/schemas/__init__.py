@@ -5,6 +5,7 @@ from src.domains.support_search.schemas.article_schemas import (
     ArticleSummary,
     ArticleUpdate,
 )
+from src.domains.support_search.schemas.rewrite_schemas import RewrittenQuery
 from src.domains.support_search.schemas.search_schemas import (
     QueryMode,
     RetrievalMode,
@@ -24,6 +25,7 @@ __all__ = [
     "QueryMode",
     "RetrievalMode",
     "RetrievedArticle",
+    "RewrittenQuery",
     "ScoreType",
     "SearchRequest",
     "StageDebug",
