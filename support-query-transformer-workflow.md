@@ -354,23 +354,32 @@ support-query-transformer/
 class QueryRewriter(Protocol):
     async def rewrite(self, question: str, history: list[str]) -> RewrittenQuery: ...
 
+
 # embeddings/base.py
 class Embedder(Protocol):
     model_name: str
     dimensions: int
+
     def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
     def embed_query(self, text: str) -> list[float]: ...
 
+
 # vectorstore/base.py
 class VectorStore(Protocol):
-    def upsert(self, ids: list[str], embeddings: list[list[float]],
-               documents: list[str], metadatas: list[dict]) -> None: ...
+    def upsert(
+        self,
+        ids: list[str],
+        embeddings: list[list[float]],
+        documents: list[str],
+        metadatas: list[dict],
+    ) -> None: ...
     def delete_article(self, article_id: str) -> int: ...
     def get_article_chunks(self, article_id: str) -> list[StoredChunk]: ...
-    def get_all_chunks(self) -> list[StoredChunk]: ...          # feeds the BM25 rebuild
+    def get_all_chunks(self) -> list[StoredChunk]: ...  # feeds the BM25 rebuild
     def list_articles(self, category: str | None = None) -> list[ArticleSummary]: ...
     def query(self, embedding: list[float], top_k: int) -> list[ChunkHit]: ...
     def count(self) -> int: ...
+
 
 # keyword_search/base.py
 class KeywordIndex(Protocol):
@@ -378,9 +387,11 @@ class KeywordIndex(Protocol):
     def search(self, query: str, top_k: int) -> list[ChunkHit]: ...
     def size(self) -> int: ...
 
+
 # reranking/base.py
 class Reranker(Protocol):
     model_name: str
+
     def rerank(self, query: str, candidates: list[ChunkHit]) -> list[ChunkHit]: ...
 ```
 
