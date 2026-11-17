@@ -1,0 +1,303 @@
+[
+  {
+    "id": "C-001",
+    "pattern": "pronoun",
+    "question": "How long do I have to return it?",
+    "history": [
+      "Do you sell the Trailblazer jacket in waterproof?",
+      "Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof."
+    ],
+    "expected_article_ids": ["KB-012"]
+  },
+  {
+    "id": "C-002",
+    "pattern": "pronoun",
+    "question": "What warranty does it come with?",
+    "history": [
+      "I'm looking at the Basecamp 4 tent.",
+      "The Basecamp 4 (BC-400) sleeps four and weighs 4.1 kg."
+    ],
+    "expected_article_ids": ["KB-041"]
+  },
+  {
+    "id": "C-003",
+    "pattern": "pronoun",
+    "question": "Can I exchange them for a half size up?",
+    "history": [
+      "I bought the Cascade Hiker boots last week.",
+      "Great choice, the Cascade Hiker (CH-310) is our most popular boot."
+    ],
+    "expected_article_ids": ["KB-025"]
+  },
+  {
+    "id": "C-004",
+    "pattern": "pronoun",
+    "question": "Do they expire?",
+    "history": [
+      "Do you have gift cards?",
+      "Yes, we offer digital gift cards from $25 to $500."
+    ],
+    "expected_article_ids": ["KB-061"]
+  },
+  {
+    "id": "C-005",
+    "pattern": "pronoun",
+    "question": "How do I figure out which size of it fits me?",
+    "history": [
+      "I want to order the Ridgeline 65 pack.",
+      "The Ridgeline 65 (RL-65) is in stock in all three torso sizes."
+    ],
+    "expected_article_ids": ["KB-052"]
+  },
+  {
+    "id": "C-006",
+    "pattern": "ellipsis",
+    "question": "What about Canada?",
+    "history": [
+      "How long does shipping take to the United States?",
+      "Standard shipping within the US takes 3 to 5 business days."
+    ],
+    "expected_article_ids": ["KB-031"]
+  },
+  {
+    "id": "C-007",
+    "pattern": "ellipsis",
+    "question": "And for sale items?",
+    "history": [
+      "What's the return window for footwear?",
+      "Footwear can be returned within 30 days if it is unworn outdoors."
+    ],
+    "expected_article_ids": ["KB-013"]
+  },
+  {
+    "id": "C-008",
+    "pattern": "ellipsis",
+    "question": "And tents?",
+    "history": [
+      "What's the warranty on backpacks?",
+      "Ridgeline backpacks carry a lifetime warranty."
+    ],
+    "expected_article_ids": ["KB-041"]
+  },
+  {
+    "id": "C-009",
+    "pattern": "ellipsis",
+    "question": "Australia?",
+    "history": [
+      "Do you ship to the UK?",
+      "Yes, UK delivery takes 7 to 12 business days."
+    ],
+    "expected_article_ids": ["KB-033"]
+  },
+  {
+    "id": "C-010",
+    "pattern": "correction",
+    "question": "No, I meant the backpack, not the tent.",
+    "history": [
+      "What's the warranty on your tents?",
+      "Basecamp tents are covered for five years."
+    ],
+    "expected_article_ids": ["KB-042"]
+  },
+  {
+    "id": "C-011",
+    "pattern": "correction",
+    "question": "Sorry, I meant a jacket, not boots.",
+    "history": [
+      "How long do I have to return boots?",
+      "Footwear can be returned within 30 days."
+    ],
+    "expected_article_ids": ["KB-012"]
+  },
+  {
+    "id": "C-012",
+    "pattern": "correction",
+    "question": "Actually I'm in the UK, not Canada.",
+    "history": [
+      "How long does delivery to Canada take?",
+      "Standard shipping to Canada takes 6 to 10 business days."
+    ],
+    "expected_article_ids": ["KB-032"]
+  },
+  {
+    "id": "C-013",
+    "pattern": "correction",
+    "question": "Wait, I meant for a jacket, not boots.",
+    "history": [
+      "How do I work out what size boots I need?",
+      "Measure your foot in hiking socks; our boots run true to size."
+    ],
+    "expected_article_ids": ["KB-050"]
+  },
+  {
+    "id": "C-014",
+    "pattern": "multi_reference",
+    "question": "Which of those two has a longer warranty?",
+    "history": [
+      "I'm deciding between the Basecamp 2 tent and the Ridgeline 45 backpack as a gift.",
+      "Both are popular choices: the Basecamp 2 (BC-200) and the Ridgeline 45 (RL-45)."
+    ],
+    "expected_article_ids": ["KB-041", "KB-042"]
+  },
+  {
+    "id": "C-015",
+    "pattern": "multi_reference",
+    "question": "Which of the two is warmer?",
+    "history": [
+      "Tell me about the Summit Shell.",
+      "The Summit Shell (SS-110) is an alpine hardshell.",
+      "Is there an insulated one too?",
+      "Yes, the Summit Shell Insulated (SS-111)."
+    ],
+    "expected_article_ids": ["KB-104", "KB-103"]
+  },
+  {
+    "id": "C-016",
+    "pattern": "multi_reference",
+    "question": "Can I combine the second one with a gift card?",
+    "history": [
+      "Can I pay with PayPal?",
+      "Yes, PayPal is accepted.",
+      "Do you offer installment plans?",
+      "Yes, orders over $100 can be paid in installments."
+    ],
+    "expected_article_ids": ["KB-062"]
+  },
+  {
+    "id": "C-017",
+    "pattern": "multi_reference",
+    "question": "Which of them is cheaper to ship to?",
+    "history": [
+      "Do you deliver to Canada and Australia?",
+      "Yes, we ship to both countries."
+    ],
+    "expected_article_ids": ["KB-031", "KB-033"]
+  },
+  {
+    "id": "C-018",
+    "pattern": "exact_code",
+    "question": "Is TB-PRO-23 machine washable?",
+    "history": [],
+    "expected_article_ids": ["KB-102"]
+  },
+  {
+    "id": "C-019",
+    "pattern": "exact_code",
+    "question": "What is the waterproof rating of SS-111?",
+    "history": [],
+    "expected_article_ids": ["KB-104"]
+  },
+  {
+    "id": "C-020",
+    "pattern": "exact_code",
+    "question": "How much does the BC-200 weigh?",
+    "history": [],
+    "expected_article_ids": ["KB-107"]
+  },
+  {
+    "id": "C-021",
+    "pattern": "exact_code",
+    "question": "Can I take the RL-65 as carry-on?",
+    "history": [],
+    "expected_article_ids": ["KB-106"]
+  },
+  {
+    "id": "C-022",
+    "pattern": "exact_code",
+    "question": "Does the TB-PRO-22 have pit zips?",
+    "history": [
+      "I'm comparing a few of your jackets.",
+      "Happy to help. Which models are you looking at?"
+    ],
+    "expected_article_ids": ["KB-101"]
+  },
+  {
+    "id": "C-023",
+    "pattern": "paraphrase",
+    "question": "Can I send back something I bought cheap in a sale?",
+    "history": [],
+    "expected_article_ids": ["KB-013"]
+  },
+  {
+    "id": "C-024",
+    "pattern": "paraphrase",
+    "question": "I sent my parcel back ages ago and the money still hasn't shown up on my card.",
+    "history": [],
+    "expected_article_ids": ["KB-020"]
+  },
+  {
+    "id": "C-025",
+    "pattern": "paraphrase",
+    "question": "I can't remember my login details.",
+    "history": [],
+    "expected_article_ids": ["KB-070"]
+  },
+  {
+    "id": "C-026",
+    "pattern": "paraphrase",
+    "question": "The zip on my rucksack broke after three years. Will you fix it?",
+    "history": [],
+    "expected_article_ids": ["KB-042"]
+  },
+  {
+    "id": "C-027",
+    "pattern": "already_standalone",
+    "question": "What is your refund policy for sale items?",
+    "history": [],
+    "expected_article_ids": ["KB-021"]
+  },
+  {
+    "id": "C-028",
+    "pattern": "already_standalone",
+    "question": "How do I file a warranty claim?",
+    "history": [],
+    "expected_article_ids": ["KB-044"]
+  },
+  {
+    "id": "C-029",
+    "pattern": "already_standalone",
+    "question": "Which payment methods do you accept?",
+    "history": [],
+    "expected_article_ids": ["KB-060"]
+  },
+  {
+    "id": "C-030",
+    "pattern": "already_standalone",
+    "question": "How do I cancel an order I placed this morning?",
+    "history": [
+      "Hi there",
+      "Hello! How can I help you today?"
+    ],
+    "expected_article_ids": ["KB-065"]
+  },
+  {
+    "id": "C-031",
+    "pattern": "small_talk",
+    "question": "Thanks, that's all!",
+    "history": [
+      "How long does shipping to Canada take?",
+      "Standard shipping to Canada takes 6 to 10 business days."
+    ],
+    "expected_article_ids": []
+  },
+  {
+    "id": "C-032",
+    "pattern": "small_talk",
+    "question": "Great, have a nice day.",
+    "history": [
+      "Do gift cards expire?",
+      "No, Northwind gift cards never expire."
+    ],
+    "expected_article_ids": []
+  },
+  {
+    "id": "C-033",
+    "pattern": "small_talk",
+    "question": "ok cool, cheers",
+    "history": [
+      "Is the Trailblazer Pro waterproof?",
+      "Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof."
+    ],
+    "expected_article_ids": []
+  }
+]
