@@ -40,7 +40,7 @@ async def health(
         status="ok" if vector_store_ok else "degraded",
         environment=resources.environment,
         embedding_model_loaded=True,
-        reranker_loaded=False,
+        reranker_loaded=resources.reranker is not None,
         vector_store="ok" if vector_store_ok else "error",
         keyword_index_chunks=resources.keyword_index.size(),
         rewrite_provider="none",

@@ -50,7 +50,7 @@ async def seed(service: ArticleService, kb_dir: Path) -> int:
 
 async def main() -> None:
     load_environment()
-    resources = build_resources()
+    resources = build_resources(load_reranker=False)
     service = ArticleService(
         embedder=resources.embedder,
         vector_store=resources.vector_store,

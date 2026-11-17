@@ -2,7 +2,7 @@
 
 import logging
 
-from src.core.exceptions import KnowledgeBaseEmptyError
+from src.core.exceptions import KnowledgeBaseEmptyError, RerankerUnavailableError
 from src.core.schemas.chunk import chunk_body
 from src.domains.support_search.schemas.search_schemas import (
     QueryMode,
@@ -79,9 +79,12 @@ class SupportSearchService:
         if self._keyword_index.size() == 0:  # BM25 mirrors the store, and this check is free
             raise KnowledgeBaseEmptyError()
 
-        # Query stage: only `question_only` exists so far; rewrite and rerank arrive later.
+        if request.rerank and not self._retrieval.rerank_available:
+            raise RerankerUnavailableError()
+
+        # Query stage: only `question_only` exists so far; the rewriter arrives later.
         search_query = request.question
-        outcome = await self._retrieval.retrieve(search_query, request.retrieval)
+        outcome = await self._retrieval.retrieve(search_query, request.retrieval, request.rerank)
         results = group_by_article(
             outcome.chunks, request.top_k or self._default_top_k, request.include_debug
         )
@@ -91,6 +94,8 @@ class SupportSearchService:
                 "question_chars": len(request.question),
                 "history_items": len(request.history),
                 "retrieval": request.retrieval.value,
+                "rerank": request.rerank,
+                "rerank_fallback": outcome.rerank_fallback,
                 "results": len(results),
             },
         )
@@ -99,7 +104,8 @@ class SupportSearchService:
             search_query=search_query,
             query_mode=QueryMode.QUESTION_ONLY,
             retrieval=request.retrieval,
-            rerank=False,
+            rerank=request.rerank,
+            rerank_fallback=outcome.rerank_fallback,
             score_type=outcome.score_type,
             results=results,
         )

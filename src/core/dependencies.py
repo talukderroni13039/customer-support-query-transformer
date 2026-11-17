@@ -10,6 +10,7 @@ from src.domains.support_search.chunking.article_chunker import DEFAULT_CHUNK_MA
 from src.domains.support_search.services.article_service import ArticleService
 from src.domains.support_search.services.retrieval_service import (
     DEFAULT_CANDIDATES_PER_RETRIEVER,
+    DEFAULT_RERANK_CANDIDATES,
     RetrievalService,
 )
 from src.domains.support_search.services.support_search_service import (
@@ -18,6 +19,7 @@ from src.domains.support_search.services.support_search_service import (
 )
 from src.embeddings.base import Embedder
 from src.keyword_search.base import KeywordIndex
+from src.reranking.base import Reranker
 from src.utils.env import env_int
 from src.utils.rank_fusion import DEFAULT_RRF_K
 from src.vectorstore.base import VectorStore
@@ -51,6 +53,11 @@ def get_keyword_index(resources: ResourcesDep) -> KeywordIndex:
     return resources.keyword_index
 
 
+def get_reranker(resources: ResourcesDep) -> Reranker | None:
+    """None when reranking is disabled (RERANK_ENABLED=false)."""
+    return resources.reranker
+
+
 def get_article_service(
     resources: ResourcesDep,
     embedder: Annotated[Embedder, Depends(get_embedder)],
@@ -70,15 +77,18 @@ def get_retrieval_service(
     embedder: Annotated[Embedder, Depends(get_embedder)],
     vector_store: Annotated[VectorStore, Depends(get_vector_store)],
     keyword_index: Annotated[KeywordIndex, Depends(get_keyword_index)],
+    reranker: Annotated[Reranker | None, Depends(get_reranker)],
 ) -> RetrievalService:
     return RetrievalService(
         embedder=embedder,
         vector_store=vector_store,
         keyword_index=keyword_index,
+        reranker=reranker,
         candidates_per_retriever=env_int(
             "CANDIDATES_PER_RETRIEVER", DEFAULT_CANDIDATES_PER_RETRIEVER
         ),
         rrf_k=env_int("RRF_K", DEFAULT_RRF_K),
+        rerank_candidates=env_int("RERANK_CANDIDATES", DEFAULT_RERANK_CANDIDATES),
     )
 
 

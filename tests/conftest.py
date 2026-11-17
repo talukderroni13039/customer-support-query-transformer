@@ -15,17 +15,18 @@ from src.core.dependencies import get_optional_resources
 from src.core.lifespan import AppResources
 from src.keyword_search.bm25_index import BM25Index
 from src.main import create_app
-from tests.fakes import FakeEmbedder, make_chroma_store
+from tests.fakes import FakeEmbedder, FakeReranker, make_chroma_store
 
 
 @pytest.fixture
 def resources() -> AppResources:
-    """Fake embedder, in-memory Chroma, and the real (pure Python) BM25 index."""
+    """Fake embedder and reranker, in-memory Chroma, and the real (pure Python) BM25 index."""
     return AppResources(
         environment="test",
         embedder=FakeEmbedder(),
         vector_store=make_chroma_store(),
         keyword_index=BM25Index(),
+        reranker=FakeReranker(),
     )
 
 

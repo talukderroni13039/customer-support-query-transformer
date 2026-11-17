@@ -3,6 +3,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from src.core.lifespan import AppResources
 from tests.integration.test_articles_api import err, ok
 
 ARTICLES = "/api/v1/support/articles"
@@ -135,3 +136,69 @@ def test_invalid_requests_return_422(seeded_client: TestClient) -> None:
     ]
     for body in cases:
         err(seeded_client.post(SEARCH, json=body), 422, "VALIDATION_ERROR")
+
+
+# --- reranking -------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("retrieval", "rerank", "score_type"),
+    [
+        ("vector", False, "cosine"),
+        ("keyword", False, "bm25"),
+        ("hybrid", False, "rrf"),
+        ("vector", True, "rerank"),
+        ("keyword", True, "rerank"),
+        ("hybrid", True, "rerank"),
+    ],
+)
+def test_every_retrieval_and_rerank_combination_returns_correct_score_type(
+    seeded_client: TestClient, retrieval: str, rerank: bool, score_type: str
+) -> None:
+    data = ok(
+        search(
+            seeded_client,
+            question="Is the TB-PRO-22 jacket waterproof?",
+            query_mode="question_only",
+            retrieval=retrieval,
+            rerank=rerank,
+            include_debug=True,
+        )
+    )
+    assert data["retrieval"] == retrieval
+    assert data["rerank"] is rerank
+    assert data["score_type"] == score_type
+    assert data["rerank_fallback"] is False
+    top = data["results"][0]
+    assert top["title"] == "Trailblazer Pro Jacket"
+    assert (top["debug"]["rerank_score"] is not None) is rerank
+    assert (top["debug"]["vector_rank"] is not None) is (retrieval != "keyword")
+    assert (top["debug"]["keyword_rank"] is not None) is (retrieval != "vector")
+    assert (top["debug"]["rrf_score"] is not None) is (retrieval == "hybrid")
+    if rerank:
+        assert 0.0 <= top["score"] <= 1.0
+
+
+def test_rerank_true_with_reranker_disabled_returns_409(
+    seeded_client: TestClient, resources: AppResources
+) -> None:
+    resources.reranker = None
+    err(
+        search(seeded_client, question="jacket", query_mode="question_only"),
+        409,
+        "RERANKER_DISABLED",
+    )
+    ok(search(seeded_client, question="jacket", query_mode="question_only", rerank=False))
+    assert ok(seeded_client.get("/health"))["reranker_loaded"] is False
+
+
+def test_reranker_failure_falls_back_and_is_flagged(
+    seeded_client: TestClient, resources: AppResources
+) -> None:
+    resources.reranker.fail = True  # type: ignore[union-attr]
+    data = ok(search(seeded_client, question="shell jacket", query_mode="question_only"))
+    assert data["rerank"] is True
+    assert data["rerank_fallback"] is True
+    assert data["score_type"] == "rrf"
+    assert data["results"]
+    assert ok(seeded_client.get("/health"))["reranker_loaded"] is True

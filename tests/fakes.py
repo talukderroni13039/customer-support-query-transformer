@@ -8,6 +8,7 @@ from typing import Any
 
 import chromadb
 
+from src.core.schemas.chunk import ChunkHit
 from src.vectorstore.chroma_store import ChromaStore
 
 _WORD = re.compile(r"[a-z0-9]+")
@@ -92,3 +93,24 @@ class Spy:
 
     def called(self, name: str) -> int:
         return sum(1 for call_name, _ in self.calls if call_name == name)
+
+
+class FakeReranker:
+    """Scores by word overlap with the query (0-1) and returns the candidates re-sorted."""
+
+    model_name = "fake-reranker"
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, list[ChunkHit]]] = []
+        self.fail = False
+
+    def rerank(self, query: str, candidates: list[ChunkHit]) -> list[ChunkHit]:
+        self.calls.append((query, list(candidates)))
+        if self.fail:
+            raise RuntimeError("reranker crashed")
+        query_words = set(words(query))
+        rescored = [
+            hit.with_score(len(query_words & set(words(hit.index_text))) / max(len(query_words), 1))
+            for hit in candidates
+        ]
+        return sorted(rescored, key=lambda hit: hit.score, reverse=True)
