@@ -11,11 +11,17 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
+from src.domains.support_search.prompts.answer_prompt import ANSWER_PROMPT_VERSION
 from src.domains.support_search.prompts.rewrite_prompt import PROMPT_VERSION
 from src.embeddings.base import Embedder
 from src.embeddings.bge_embedder import DEFAULT_EMBEDDING_MODEL, BgeEmbedder
 from src.keyword_search.base import KeywordIndex
 from src.keyword_search.bm25_index import BM25Index
+from src.llm.anthropic_answerer import (
+    DEFAULT_ANSWER_MAX_TOKENS,
+    DEFAULT_ANSWER_TIMEOUT_SECONDS,
+    AnthropicAnswerGenerator,
+)
 from src.llm.anthropic_rewriter import (
     DEFAULT_LLM_MAX_RETRIES,
     DEFAULT_LLM_MAX_TOKENS,
@@ -23,7 +29,8 @@ from src.llm.anthropic_rewriter import (
     DEFAULT_LLM_TIMEOUT_SECONDS,
     AnthropicRewriter,
 )
-from src.llm.base import QueryRewriter
+from src.llm.base import AnswerGenerator, QueryRewriter
+from src.llm.cached_answerer import DEFAULT_ANSWER_CACHE_PATH, CachedAnswerGenerator
 from src.llm.cached_rewriter import DEFAULT_REWRITE_CACHE_PATH, CachedRewriter
 from src.llm.call_budget import DEFAULT_BUDGET_PATH, DEFAULT_LLM_CALL_BUDGET, LlmCallBudget
 from src.reranking.base import Reranker
@@ -46,27 +53,39 @@ class AppResources:
     reranker: Reranker | None = None  # None when RERANK_ENABLED=false
     rewriter: QueryRewriter | None = None  # None when REWRITE_PROVIDER=none or no API key
     rewrite_provider: str = "none"
+    answer_generator: AnswerGenerator | None = None  # None without a provider or key
     index_write_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+
+
+def _llm_api_key() -> str | None:
+    """The Anthropic key, or None when the provider is disabled or the key is missing."""
+    provider = env_str("REWRITE_PROVIDER", "anthropic").lower()
+    if provider == "none":
+        return None
+    if provider != "anthropic":
+        raise ValueError("REWRITE_PROVIDER must be 'anthropic' or 'none'")
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+    if not api_key:
+        logger.warning("ANTHROPIC_API_KEY is not set: rewrite and answers fall back")
+        return None
+    return api_key
+
+
+def _call_budget() -> LlmCallBudget:
+    return LlmCallBudget(
+        path=Path(env_str("LLM_BUDGET_PATH", DEFAULT_BUDGET_PATH)),
+        limit=env_int("LLM_CALL_BUDGET", DEFAULT_LLM_CALL_BUDGET),
+    )
 
 
 def build_rewriter() -> tuple[QueryRewriter | None, str]:
     """Create the cached Claude rewriter once. Returns `(rewriter, provider_name)`."""
-    provider = env_str("REWRITE_PROVIDER", "anthropic").lower()
-    if provider == "none":
-        return None, "none"
-    if provider != "anthropic":
-        raise ValueError("REWRITE_PROVIDER must be 'anthropic' or 'none'")
-
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        logger.warning("ANTHROPIC_API_KEY is not set: rewrite falls back to the question")
+    api_key = _llm_api_key()
+    if api_key is None:
         return None, "none"
 
     model = env_str("LLM_MODEL", DEFAULT_LLM_MODEL)
-    budget = LlmCallBudget(
-        path=Path(env_str("LLM_BUDGET_PATH", DEFAULT_BUDGET_PATH)),
-        limit=env_int("LLM_CALL_BUDGET", DEFAULT_LLM_CALL_BUDGET),
-    )
+    budget = _call_budget()
     rewriter = AnthropicRewriter(
         api_key=api_key,
         budget=budget,
@@ -81,6 +100,27 @@ def build_rewriter() -> tuple[QueryRewriter | None, str]:
         namespace=f"{model}:{PROMPT_VERSION}",
     )
     return cached, "anthropic"
+
+
+def build_answer_generator() -> AnswerGenerator | None:
+    """Create the cached Claude answer generator once (same provider, key, and budget)."""
+    api_key = _llm_api_key()
+    if api_key is None:
+        return None
+    model = env_str("LLM_MODEL", DEFAULT_LLM_MODEL)
+    generator = AnthropicAnswerGenerator(
+        api_key=api_key,
+        budget=_call_budget(),
+        model=model,
+        max_tokens=env_int("LLM_ANSWER_MAX_TOKENS", DEFAULT_ANSWER_MAX_TOKENS),
+        max_retries=env_int("LLM_MAX_RETRIES", DEFAULT_LLM_MAX_RETRIES),
+        timeout_seconds=env_float("LLM_ANSWER_TIMEOUT_SECONDS", DEFAULT_ANSWER_TIMEOUT_SECONDS),
+    )
+    return CachedAnswerGenerator(
+        inner=generator,
+        cache_path=Path(env_str("ANSWER_CACHE_PATH", DEFAULT_ANSWER_CACHE_PATH)),
+        namespace=f"{model}:{ANSWER_PROMPT_VERSION}",
+    )
 
 
 def build_resources(*, load_reranker: bool = True, load_rewriter: bool = True) -> AppResources:
@@ -105,6 +145,7 @@ def build_resources(*, load_reranker: bool = True, load_rewriter: bool = True) -
         )
 
     rewriter, rewrite_provider = build_rewriter() if load_rewriter else (None, "none")
+    answer_generator = build_answer_generator() if load_rewriter else None
 
     resources = AppResources(
         environment=env_str("APP_ENV", "dev"),
@@ -114,6 +155,7 @@ def build_resources(*, load_reranker: bool = True, load_rewriter: bool = True) -
         reranker=reranker,
         rewriter=rewriter,
         rewrite_provider=rewrite_provider,
+        answer_generator=answer_generator,
     )
     logger.info(
         "resources ready",

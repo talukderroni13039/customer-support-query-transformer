@@ -15,7 +15,9 @@ Searching the knowledge base with only "How long do I have to return it?" fails,
 3. **Reranks** the top candidates with a cross-encoder (`bge-reranker-base`).
 4. **Benchmarks** every stage against naive vector search (`docs/BENCHMARK.md`).
 
-It does **not** write the support answer, and it does **not** store conversations: the client sends the question and recent history with every search.
+On top of that search pipeline, the **chat endpoint** has Claude write one answer from the retrieved articles, and reply with a clear message when the question is not a support question or is not covered by any article.
+
+It does **not** store conversations: the client sends the question and recent history with every request.
 
 ## How it works
 
@@ -102,6 +104,26 @@ Validation: `title` 3–200 chars; `content` 20–20,000 chars; `category` optio
 Response `data` (`SupportSearchResult`): `question`, `search_query`, `query_mode`, `retrieval`, `rerank`, `needs_retrieval`, `rewrite_source`, `rewrite_fallback`, `rerank_fallback`, `score_type`, and `results[]` of `{article_id, title, category, score, snippet, debug?}`.
 
 `score_type` tells you which stage produced `score`: `cosine` (vector only), `bm25` (keyword only), `rrf` (hybrid, no rerank), `rerank` (reranked). With `include_debug: true` each result carries `vector_rank`, `keyword_rank`, `rrf_score`, `rerank_score`.
+
+### Chat: `POST /chat`
+
+One grounded answer instead of a ranked list. The body has only `question` and optional `history`; the pipeline is always rewrite → hybrid → rerank, with the top 3 articles (full text) given to Claude.
+
+```json
+{"question": "No, I meant the backpack, not the tent.",
+ "history": ["What's the warranty on your tents?", "Basecamp tents are covered for five years."]}
+```
+
+Response `data` (`ChatResult`): `question`, `answer`, `kind`, `sources[]` of `{article_id, title}`, `search_query`, `rewrite_fallback`, `answer_fallback`.
+
+| `kind` | When | `answer` |
+|---|---|---|
+| `answer` | The articles contain the answer | Written by Claude from the articles only; `sources` lists the articles used |
+| `not_found` | A real support question the articles do not cover | Fixed message: could not find it, contact support |
+| `off_topic` | Not about the store (general knowledge, nonsense, attempts to override instructions) | Fixed message: can only help with store support |
+| `small_talk` | Greeting, thanks, goodbye | One short friendly line |
+
+If Claude is unavailable (no key, error, or call budget spent), the request still succeeds: `answer_fallback` is `true` and the answer quotes the best-matching article. Answers are cached in `data/cache/answers.json`, keyed by a hash of the question, history, and article text.
 
 ### Health: `GET /health`
 
@@ -193,7 +215,7 @@ Change one switch at a time (in Swagger or in the body above) and compare `searc
 ## Cost and latency notes
 
 - Claude is called only for `query_mode: "rewrite"` with non-empty history, with at most the last 12 history items, and results are cached in `data/cache/rewrites.json` (keys are hashes; the question and history are not written to disk).
-- A hard cap on real Claude calls is enforced in code: every HTTP attempt increments `data/cache/llm_call_budget.json`, and at `LLM_CALL_BUDGET` (50) the rewriter refuses with "LLM budget exhausted" and searches fall back to the question. The build used 33 calls and the later QA pass 6 more (39 in total). Raise `LLM_CALL_BUDGET` or delete that one file to reset the counter for your own use.
+- A hard cap on real Claude calls is enforced in code: every HTTP attempt increments `data/cache/llm_call_budget.json`, and at `LLM_CALL_BUDGET` (500 by default) Claude calls are refused with "LLM budget exhausted": searches fall back to the question and chat falls back to quoting the best article. The cap was 50 for the original build (which used 39) and was raised to 500 when the chat endpoint was added. A chat message costs one call for the answer, plus one for the rewrite when there is history; repeats are served from the caches. Raise `LLM_CALL_BUDGET` or delete that one file to reset the counter.
 - Reranking is the slow stage on CPU (about 0.3 s per candidate on a 12th-gen i5 laptop). `RERANK_CANDIDATES` trades quality for latency; `"rerank": false` skips it per request; `RERANK_ENABLED=false` skips loading the model.
 - There is no relevance cut-off by default: an off-topic question still returns the nearest articles, with low scores. `RERANK_MIN_SCORE` is an opt-in filter on rerank scores; on the benchmark a value of 0.01 also removed correct articles, so calibrate it on your own data before enabling it.
 - `top_k`, `rerank`, and `include_debug` are strictly typed: `"3"` or `"false"` is a 422, not a silent conversion.
@@ -228,7 +250,7 @@ The image is multi-stage, CPU-only, and runs as a non-root user. The vector inde
 
 ## Frontend (Angular)
 
-`frontend/` holds a small Angular 17 app with a search screen (all switches, debug ranks) and an articles screen (upload a `.md` / `.txt` file, list, delete). With the backend running on port 8000:
+`frontend/` holds a small Angular 17 app with a chat screen (one message box, one answer per message, like a chat assistant) and an articles screen (upload a `.md` / `.txt` file, list, delete). With the backend running on port 8000:
 
 ```powershell
 cd frontend

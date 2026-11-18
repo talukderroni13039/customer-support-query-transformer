@@ -18,13 +18,14 @@ from src.domains.support_search.services.retrieval_service import (
     DEFAULT_RERANK_MIN_SCORE,
     RetrievalService,
 )
+from src.domains.support_search.services.support_chat_service import SupportChatService
 from src.domains.support_search.services.support_search_service import (
     DEFAULT_TOP_K,
     SupportSearchService,
 )
 from src.embeddings.base import Embedder
 from src.keyword_search.base import KeywordIndex
-from src.llm.base import QueryRewriter
+from src.llm.base import AnswerGenerator, QueryRewriter
 from src.reranking.base import Reranker
 from src.utils.env import env_bool, env_float, env_int
 from src.utils.rank_fusion import DEFAULT_RRF_K
@@ -124,4 +125,25 @@ def get_support_search_service(
         retrieval_service=retrieval_service,
         keyword_index=keyword_index,
         default_top_k=env_int("DEFAULT_TOP_K", DEFAULT_TOP_K),
+    )
+
+
+def get_answer_generator(resources: ResourcesDep) -> AnswerGenerator | None:
+    """None when the LLM provider is disabled or has no API key."""
+    return resources.answer_generator
+
+
+def get_support_chat_service(
+    search_service: Annotated[SupportSearchService, Depends(get_support_search_service)],
+    query_service: Annotated[QueryService, Depends(get_query_service)],
+    vector_store: Annotated[VectorStore, Depends(get_vector_store)],
+    answer_generator: Annotated[AnswerGenerator | None, Depends(get_answer_generator)],
+    reranker: Annotated[Reranker | None, Depends(get_reranker)],
+) -> SupportChatService:
+    return SupportChatService(
+        search_service=search_service,
+        query_service=query_service,
+        vector_store=vector_store,
+        answer_generator=answer_generator,
+        rerank_available=reranker is not None,
     )

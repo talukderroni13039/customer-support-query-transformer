@@ -15,7 +15,13 @@ from src.core.dependencies import get_optional_resources
 from src.core.lifespan import AppResources
 from src.keyword_search.bm25_index import BM25Index
 from src.main import create_app
-from tests.fakes import FakeEmbedder, FakeReranker, FakeRewriter, make_chroma_store
+from tests.fakes import (
+    FakeAnswerGenerator,
+    FakeEmbedder,
+    FakeReranker,
+    FakeRewriter,
+    make_chroma_store,
+)
 
 
 @pytest.fixture
@@ -29,6 +35,7 @@ def resources() -> AppResources:
         reranker=FakeReranker(),
         rewriter=FakeRewriter(),
         rewrite_provider="fake",
+        answer_generator=FakeAnswerGenerator(),
     )
 
 

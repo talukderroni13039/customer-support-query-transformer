@@ -9,47 +9,21 @@ export interface ApiResponse<T> {
   meta: { request_id: string; processing_time_ms: number };
 }
 
-export type QueryMode = 'rewrite' | 'question_only' | 'full_history';
-export type RetrievalMode = 'hybrid' | 'vector' | 'keyword';
+export type AnswerKind = 'answer' | 'not_found' | 'off_topic' | 'small_talk';
 
-export interface SearchRequest {
-  question: string;
-  history: string[];
-  top_k: number;
-  query_mode: QueryMode;
-  retrieval: RetrievalMode;
-  rerank: boolean;
-  include_debug: boolean;
-}
-
-export interface StageDebug {
-  vector_rank: number | null;
-  keyword_rank: number | null;
-  rrf_score: number | null;
-  rerank_score: number | null;
-}
-
-export interface RetrievedArticle {
+export interface ChatSource {
   article_id: string;
   title: string;
-  category: string | null;
-  score: number;
-  snippet: string;
-  debug: StageDebug | null;
 }
 
-export interface SearchResult {
+export interface ChatResult {
   question: string;
+  answer: string;
+  kind: AnswerKind;
+  sources: ChatSource[];
   search_query: string;
-  query_mode: QueryMode;
-  retrieval: RetrievalMode;
-  rerank: boolean;
-  needs_retrieval: boolean;
-  rewrite_source: string;
   rewrite_fallback: boolean;
-  rerank_fallback: boolean;
-  score_type: string;
-  results: RetrievedArticle[];
+  answer_fallback: boolean;
 }
 
 export interface ArticleSummary {
@@ -84,19 +58,22 @@ export interface Health {
 /** Turn a failed request into one readable line, using the backend error envelope when present. */
 export function describeError(error: unknown): string {
   if (error instanceof HttpErrorResponse) {
-    if (error.status === 0) {
-      return 'Cannot reach the backend. Is it running on http://127.0.0.1:8000?';
+    if (error.status === 0 || error.status === 504) {
+      return 'Cannot reach the support service. Check that the backend is running, then try again.';
     }
     const body = error.error?.error;
+    if (body?.code === 'KB_EMPTY') {
+      return 'There are no help articles yet. Add some on the Articles tab first.';
+    }
     if (body?.code) {
       const details = Array.isArray(body.details)
         ? ' ' + body.details.map((d: { loc: string[]; msg: string }) => `${d.loc.slice(1).join('.')}: ${d.msg}`).join('; ')
         : '';
-      return `${body.code} (HTTP ${error.status}): ${body.message}${details}`;
+      return `${body.message}${details}`;
     }
-    return `HTTP ${error.status}: ${error.statusText}`;
+    return `The request failed (HTTP ${error.status}).`;
   }
-  return 'Unexpected error.';
+  return 'Something went wrong. Please try again.';
 }
 
 @Injectable({ providedIn: 'root' })
@@ -108,16 +85,15 @@ export class ApiService {
     return this.http.get<ApiResponse<Health>>('/health').pipe(map((r) => r.data));
   }
 
-  search(request: SearchRequest): Observable<ApiResponse<SearchResult>> {
-    return this.http.post<ApiResponse<SearchResult>>(`${this.base}/search`, request);
+  /** `history` is the earlier messages of this chat as plain strings, oldest first. */
+  chat(question: string, history: string[]): Observable<ChatResult> {
+    return this.http
+      .post<ApiResponse<ChatResult>>(`${this.base}/chat`, { question, history })
+      .pipe(map((r) => r.data));
   }
 
   listArticles(): Observable<ArticleSummary[]> {
     return this.http.get<ApiResponse<ArticleSummary[]>>(`${this.base}/articles`).pipe(map((r) => r.data));
-  }
-
-  getArticle(id: string): Observable<ArticleResult> {
-    return this.http.get<ApiResponse<ArticleResult>>(`${this.base}/articles/${encodeURIComponent(id)}`).pipe(map((r) => r.data));
   }
 
   createArticle(article: ArticleCreate): Observable<ArticleResult> {

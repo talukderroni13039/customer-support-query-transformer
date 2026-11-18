@@ -23,12 +23,12 @@ npm start          # http://localhost:4200
 
 ## What it does
 
-- **Search tab.** Question, optional history (one message per line, oldest first), and the switches `query_mode`, `retrieval`, `rerank`, `top_k`, and debug ranks. Results show the rewritten query, where the rewrite came from, the score type, and each article's score and snippet. The "Try" buttons run ready-made examples.
+- **Chat tab.** One message box, like a chat assistant. Each message gets one written answer, with the help article it came from underneath. Questions that are not about the store get a short "I can only help with support" reply, and support questions the articles do not cover get a "couldn't find that" reply. Earlier messages stay on screen and are sent along as history, so follow-ups such as "what about Canada?" work. Enter sends, Shift+Enter makes a new line, and "Start a new chat" clears the conversation.
 - **Articles tab.** Upload a `.md`, `.markdown`, or `.txt` file, review the title, category, and content, then store it. Lists stored articles and deletes them.
 
 Uploads are read in the browser and sent to `POST /api/v1/support/articles` as JSON. Only text is supported: PDF, Word, and Excel files must be converted to text first. A file may start with front matter (`title:` and `category:` between `---` lines, as in `data/kb/*.md`); otherwise the title comes from the first `# heading` or the file name. `sample-upload/tent-repair-service.md` is a ready-made file to try.
 
-A search with history in `rewrite` mode asks Claude to rewrite the question. A conversation the backend has not seen before uses one call from its call budget; the app shows a note when that applies.
+The chat calls `POST /api/v1/support/chat`, which always runs the full pipeline (rewrite, hybrid retrieval, rerank) and has Claude write the answer. A new message costs one Claude call, or two when there is earlier conversation; repeated ones are served from the backend's caches. Nothing is stored on the server: reloading the page starts a new conversation.
 
 ## Layout
 

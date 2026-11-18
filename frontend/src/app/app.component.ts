@@ -1,23 +1,19 @@
-import { Component, OnInit, inject, signal } from '@angular/core';
+import { AfterViewChecked, Component, ElementRef, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import {
-  ApiService,
-  ArticleCreate,
-  ArticleSummary,
-  Health,
-  QueryMode,
-  RetrievalMode,
-  SearchResult,
-  describeError,
-} from './api.service';
+import { AnswerKind, ApiService, ArticleCreate, ArticleSummary, ChatSource, describeError } from './api.service';
 import { ACCEPTED_EXTENSIONS, MAX_CONTENT_CHARS, hasAcceptedExtension, parseArticleFile } from './article-file';
 
-interface Example {
-  label: string;
-  question: string;
-  history: string[];
+interface ChatMessage {
+  role: 'user' | 'assistant';
+  text: string;
+  kind?: AnswerKind | 'error';
+  sources?: ChatSource[];
 }
+
+// Limits of the chat endpoint: each history item up to 2000 characters, 100 items.
+const MAX_MESSAGE_CHARS = 2000;
+const MAX_HISTORY_ITEMS = 40;
 
 @Component({
   selector: 'app-root',
@@ -26,37 +22,24 @@ interface Example {
   templateUrl: './app.component.html',
   styleUrl: './app.component.css',
 })
-export class AppComponent implements OnInit {
+export class AppComponent implements OnInit, AfterViewChecked {
   private readonly api = inject(ApiService);
 
-  readonly tab = signal<'search' | 'articles'>('search');
-  readonly health = signal<Health | null>(null);
-  readonly healthError = signal('');
+  readonly tab = signal<'chat' | 'articles'>('chat');
+  readonly online = signal<boolean | null>(null);
 
-  // --- search ---------------------------------------------------------------------------
-  question = '';
-  historyText = '';
-  queryMode: QueryMode = 'rewrite';
-  retrieval: RetrievalMode = 'hybrid';
-  rerank = true;
-  includeDebug = true;
-  topK = 3;
+  // --- chat -----------------------------------------------------------------------------
+  @ViewChild('thread') private thread?: ElementRef<HTMLElement>;
+  private scrollPending = false;
 
-  readonly searching = signal(false);
-  readonly searchError = signal('');
-  readonly result = signal<SearchResult | null>(null);
-  readonly searchMs = signal(0);
-
-  readonly examples: Example[] = [
-    { label: 'Shipping to Canada', question: 'How long does shipping to Canada take?', history: [] },
-    { label: 'Exact product code', question: 'Is TB-PRO-23 machine washable?', history: [] },
-    { label: 'Paraphrase', question: "I can't remember my login details.", history: [] },
-    { label: 'Warranty', question: 'What is the warranty on backpacks?', history: [] },
-    {
-      label: 'Follow-up (needs history)',
-      question: 'No, I meant the backpack, not the tent.',
-      history: ["What's the warranty on your tents?", 'Basecamp tents are covered for five years.'],
-    },
+  draftMessage = '';
+  readonly messages = signal<ChatMessage[]>([]);
+  readonly thinking = signal(false);
+  readonly suggestions = [
+    'How long does shipping to Canada take?',
+    'Is TB-PRO-23 machine washable?',
+    'What is the warranty on backpacks?',
+    'I forgot my password',
   ];
 
   // --- articles -------------------------------------------------------------------------
@@ -71,71 +54,76 @@ export class AppComponent implements OnInit {
   draft: ArticleCreate | null = null;
 
   ngOnInit(): void {
-    this.refreshHealth();
+    this.checkBackend();
     this.loadArticles();
   }
 
-  refreshHealth(): void {
+  ngAfterViewChecked(): void {
+    if (this.scrollPending && this.thread) {
+      const element = this.thread.nativeElement;
+      element.scrollTop = element.scrollHeight;
+      this.scrollPending = false;
+    }
+  }
+
+  checkBackend(): void {
     this.api.health().subscribe({
-      next: (health) => {
-        this.health.set(health);
-        this.healthError.set('');
+      next: (health) => this.online.set(health.status === 'ok'),
+      error: () => this.online.set(false),
+    });
+  }
+
+  // --- chat -----------------------------------------------------------------------------
+
+  onEnter(event: Event): void {
+    const keyboard = event as KeyboardEvent;
+    if (keyboard.shiftKey) return; // Shift+Enter makes a new line
+    event.preventDefault();
+    this.send();
+  }
+
+  ask(question: string): void {
+    this.draftMessage = question;
+    this.send();
+  }
+
+  send(): void {
+    const question = this.draftMessage.trim().slice(0, MAX_MESSAGE_CHARS);
+    if (!question || this.thinking()) return;
+
+    // The conversation so far goes with every request: the backend stores nothing.
+    const history = this.messages()
+      .filter((message) => message.kind !== 'error')
+      .map((message) => message.text.slice(0, MAX_MESSAGE_CHARS))
+      .slice(-MAX_HISTORY_ITEMS);
+
+    this.messages.update((list) => [...list, { role: 'user', text: question }]);
+    this.draftMessage = '';
+    this.thinking.set(true);
+    this.scrollPending = true;
+
+    this.api.chat(question, history).subscribe({
+      next: (result) => {
+        this.messages.update((list) => [
+          ...list,
+          { role: 'assistant', text: result.answer, kind: result.kind, sources: result.sources },
+        ]);
+        this.thinking.set(false);
+        this.scrollPending = true;
       },
       error: (error) => {
-        this.health.set(null);
-        this.healthError.set(describeError(error));
+        this.messages.update((list) => [...list, { role: 'assistant', text: describeError(error), kind: 'error' }]);
+        this.thinking.set(false);
+        this.scrollPending = true;
+        this.checkBackend();
       },
     });
   }
 
-  // --- search ---------------------------------------------------------------------------
-
-  /** History is typed one message per line, oldest first. Blank lines are ignored. */
-  get history(): string[] {
-    return this.historyText
-      .split('\n')
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
-  }
-
-  /** True when this request will ask Claude to rewrite the question (uses the call budget). */
-  get willCallRewriter(): boolean {
-    return this.queryMode === 'rewrite' && this.history.length > 0;
-  }
-
-  useExample(example: Example): void {
-    this.question = example.question;
-    this.historyText = example.history.join('\n');
-    this.runSearch();
-  }
-
-  runSearch(): void {
-    const question = this.question.trim();
-    if (!question || this.searching()) return;
-    this.searching.set(true);
-    this.searchError.set('');
-    this.api
-      .search({
-        question,
-        history: this.history,
-        top_k: this.topK,
-        query_mode: this.queryMode,
-        retrieval: this.retrieval,
-        rerank: this.rerank,
-        include_debug: this.includeDebug,
-      })
-      .subscribe({
-        next: (response) => {
-          this.result.set(response.data);
-          this.searchMs.set(Math.round(response.meta.processing_time_ms));
-          this.searching.set(false);
-        },
-        error: (error) => {
-          this.result.set(null);
-          this.searchError.set(describeError(error));
-          this.searching.set(false);
-        },
-      });
+  newChat(): void {
+    if (this.thinking()) return;
+    this.messages.set([]);
+    this.draftMessage = '';
   }
 
   // --- articles -------------------------------------------------------------------------
@@ -199,11 +187,10 @@ export class AppComponent implements OnInit {
     if (draft.category) payload.category = draft.category;
     this.api.createArticle(payload).subscribe({
       next: (article) => {
-        this.uploadMessage.set(`Stored "${article.title}" as ${article.id} (${article.chunk_count} chunks). It is searchable now.`);
+        this.uploadMessage.set(`Stored "${article.title}" (${article.id}). You can ask about it in the chat now.`);
         this.draft = null;
         this.uploading.set(false);
         this.loadArticles();
-        this.refreshHealth();
       },
       error: (error) => {
         this.uploadError.set(describeError(error));
@@ -217,12 +204,11 @@ export class AppComponent implements OnInit {
   }
 
   deleteArticle(article: ArticleSummary): void {
-    if (!confirm(`Delete "${article.title}" (${article.id})? This removes it from search.`)) return;
+    if (!confirm(`Delete "${article.title}" (${article.id})? The chat will no longer use it.`)) return;
     this.api.deleteArticle(article.id).subscribe({
       next: () => {
-        this.uploadMessage.set(`Deleted ${article.id}.`);
+        this.uploadMessage.set(`Deleted "${article.title}".`);
         this.loadArticles();
-        this.refreshHealth();
       },
       error: (error) => this.articlesError.set(describeError(error)),
     });

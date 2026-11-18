@@ -8,7 +8,7 @@ from pathlib import Path
 
 from src.core.exceptions import LLMBudgetExhaustedError
 
-DEFAULT_LLM_CALL_BUDGET = 50
+DEFAULT_LLM_CALL_BUDGET = 500
 DEFAULT_BUDGET_PATH = "./data/cache/llm_call_budget.json"
 
 

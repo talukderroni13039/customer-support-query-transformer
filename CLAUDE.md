@@ -4,7 +4,8 @@
 
 Customer Support Query Transformer: a FastAPI service that finds the right support articles for a chat follow-up.
 Pipeline: **rewrite** (Claude + Instructor) → **hybrid retrieval** (ChromaDB vector + BM25, fused with RRF) → **rerank** (cross-encoder) → group by article.
-It never writes the answer and never stores conversations.
+`POST /search` returns ranked articles; `POST /chat` adds one Claude-written answer grounded in the top articles (`support_chat_service.py`), with fixed messages for off-topic and not-found questions.
+It never stores conversations. `frontend/` is an Angular chat + article-upload app that talks to the API through a dev proxy.
 
 ## 2. Commands (PowerShell)
 
@@ -78,7 +79,7 @@ Create `src/domains/<name>/{routers,schemas,services,prompts,chunking}/` (only t
 
 - Default `uv run pytest` uses `FakeRewriter`, `FakeEmbedder`, `FakeReranker`, Chroma `EphemeralClient()`, and the real `BM25Index`. Zero API calls, zero model downloads.
 - `@pytest.mark.model` (real models) and `@pytest.mark.live` (real Claude, max 5 cases, `max_retries=1`) are excluded by default and run once.
-- Hard cap: 50 real Anthropic calls for the whole build, enforced by `LlmCallBudget` (`data/cache/llm_call_budget.json`). Never debug with live calls. Never delete `data/cache/`.
+- Hard cap on real Anthropic calls (`LLM_CALL_BUDGET`, default 500; it was 50 for the original build), enforced by `LlmCallBudget` (`data/cache/llm_call_budget.json`). Never debug with live calls. Never delete `data/cache/`.
 - Coverage threshold: 80% on `src/` (enforced in `pyproject.toml`).
 
 ## 11. Security, privacy, cost

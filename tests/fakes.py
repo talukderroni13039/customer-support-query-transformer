@@ -9,6 +9,11 @@ from typing import Any
 import chromadb
 
 from src.core.schemas.chunk import ChunkHit
+from src.domains.support_search.schemas.chat_schemas import (
+    AnswerContextArticle,
+    AnswerKind,
+    GeneratedAnswer,
+)
 from src.domains.support_search.schemas.rewrite_schemas import RewrittenQuery
 from src.vectorstore.chroma_store import ChromaStore
 
@@ -138,4 +143,37 @@ class FakeRewriter:
         return RewrittenQuery(
             needs_retrieval=self.needs_retrieval,
             standalone_query=self.standalone_query if self.needs_retrieval else "",
+        )
+
+
+class FakeAnswerGenerator:
+    """Returns a scripted answer and records every call. Never touches the network."""
+
+    def __init__(
+        self,
+        kind: AnswerKind = AnswerKind.ANSWER,
+        answer: str = "You can return it within 60 days.",
+        source_article_ids: list[str] | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        self.kind = kind
+        self.answer_text = answer
+        self.source_article_ids = source_article_ids
+        self.error = error
+        self.calls: list[tuple[str, list[str], list[AnswerContextArticle]]] = []
+
+    async def answer(
+        self, question: str, history: list[str], articles: list[AnswerContextArticle]
+    ) -> GeneratedAnswer:
+        self.calls.append((question, list(history), list(articles)))
+        if self.error is not None:
+            raise self.error
+        needs_text = self.kind in (AnswerKind.ANSWER, AnswerKind.SMALL_TALK)
+        sources = self.source_article_ids
+        if sources is None:
+            sources = [a.article_id for a in articles[:1]] if self.kind is AnswerKind.ANSWER else []
+        return GeneratedAnswer(
+            kind=self.kind,
+            answer=self.answer_text if needs_text else "",
+            source_article_ids=sources,
         )
