@@ -1,57 +1,128 @@
 # customer-support-query-transformer
 
-Finds the right support articles for a customer's follow-up question in a chat.
+A support assistant for a store's help center. You ask a question in a chat, it finds the right help articles and writes one answer from them.
 
+It has two parts:
+
+- **Backend** (`src/`): a FastAPI service. It rewrites follow-up questions using the conversation, searches the articles by meaning and by exact words, reranks the results, and has Claude write the answer.
+- **Frontend** (`frontend/`): an Angular app with a chat screen and a screen for uploading articles.
+
+## Run it
+
+All commands are PowerShell, run from the repository root unless stated.
+
+### 1. What you need
+
+| Tool | Used for | Check |
+|---|---|---|
+| [uv](https://docs.astral.sh/uv/) | Backend. It installs Python 3.12 and the dependencies for you | `uv --version` |
+| Node.js 20 or newer, with npm | Frontend | `node --version` |
+| An Anthropic API key | Rewriting follow-ups and writing answers | |
+
+You also need about 2 GB of free disk space for the two search models and about 2 GB of free memory while the backend runs.
+
+### 2. Start the backend
+
+```powershell
+uv sync                                     # install dependencies (first time only)
+Copy-Item .env.example .env.dev             # first time only
 ```
-Customer: Do you sell the Trailblazer jacket in waterproof?
-Agent:    Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof.
-Customer: How long do I have to return it?
+
+Open `.env.dev` and set your key on the `ANTHROPIC_API_KEY=` line. Then:
+
+```powershell
+uv run python -m scripts.seed_kb            # load the 40 starter articles (first time only)
+$env:APP_ENV = "dev"; uv run uvicorn src.main:app
 ```
 
-Searching the knowledge base with only "How long do I have to return it?" fails, because the search engine does not know what "it" is. This service:
+The backend is ready when it prints `Uvicorn running on http://127.0.0.1:8000`. Leave this terminal open.
 
-1. **Rewrites** the question into a standalone query using the recent conversation (Claude `claude-haiku-5-5` + Instructor): `"Return window for the Trailblazer Pro TB-PRO-22 jacket"`.
-2. **Searches two ways**: by meaning (vector search, `bge-small-en-v1.5` + ChromaDB) and by exact words (BM25), then merges both lists with Reciprocal Rank Fusion.
-3. **Reranks** the top candidates with a cross-encoder (`bge-reranker-base`).
-4. **Benchmarks** every stage against naive vector search (`docs/BENCHMARK.md`).
+The first start downloads two models from Hugging Face (about 1.2 GB), so it takes a few minutes. Later starts take 20 to 30 seconds. Once the models are downloaded you can add `HF_HUB_OFFLINE=1` to `.env.dev` so the backend never contacts Hugging Face again.
 
-On top of that search pipeline, the **chat endpoint** has Claude write one answer from the retrieved articles, and reply with a clear message when the question is not a support question or is not covered by any article.
+### 3. Start the frontend
 
-It does **not** store conversations: the client sends the question and recent history with every request.
+In a **second terminal**:
+
+```powershell
+cd frontend
+npm install                                 # first time only
+npm start
+```
+
+The frontend is ready when it prints `Local: http://localhost:4200/`.
+
+### 4. Use it
+
+Open **http://localhost:4200**.
+
+- **Chat tab:** type a question, for example `How long does shipping to Canada take?`. You get one answer, with the article it came from underneath. Follow-ups such as `What about Australia?` work because the earlier messages are sent along.
+- **Articles tab:** upload a `.md` or `.txt` file to add an article, and see or delete the stored ones. `frontend/sample-upload/tent-repair-service.md` is a ready-made file to try.
+
+[`docs/SAMPLE_QUESTIONS.md`](docs/SAMPLE_QUESTIONS.md) has questions and whole conversations to try, including unrelated ones.
+
+Other addresses:
+
+| Address | What |
+|---|---|
+| http://localhost:4200 | The app |
+| http://127.0.0.1:8000/docs | Swagger page for calling the API directly |
+| http://127.0.0.1:8000/health | Backend status: models loaded, number of indexed chunks |
+
+### 5. Stop it
+
+Press `Ctrl+C` in each terminal.
+
+### If something goes wrong
+
+| What you see | Cause and fix |
+|---|---|
+| The app shows "offline", or "Cannot reach the support service" | The backend is not running, or is still loading its models. Check the first terminal and http://127.0.0.1:8000/health |
+| "There are no help articles yet" | The knowledge base is empty. Run `uv run python -m scripts.seed_kb`, or upload an article |
+| Answers quote an article instead of being written out | Claude was not reachable: the key is missing or wrong in `.env.dev`, or the call budget is used up (see "Cost" below). Restart the backend after changing `.env.dev` |
+| `Port 4200 is already in use` or port 8000 in use | An earlier copy is still running. Close its terminal, or stop the old `node` / `python` process |
+| The backend stops or fails with a memory error | It needs about 2 GB of free memory. Close other large programs and start it again |
+| Answers take several seconds | Expected on a laptop CPU: reranking takes 3 to 5 seconds. See "Cost and speed" |
+| First start seems stuck | It is downloading the models (about 1.2 GB) |
+
+### Settings
+
+The backend reads `.env.dev` when `APP_ENV` is `dev`, and `.env.uat` when it is `uat`. Both files are ignored by git. Every setting except the API key has a default in code; `.env.example` lists them all. The ones you are most likely to change:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `ANTHROPIC_API_KEY` | none | Your key. Without it the app still runs, but answers fall back to quoting the best article |
+| `LLM_CALL_BUDGET` | `500` | Hard cap on Claude calls. See "Cost and speed" |
+| `RERANK_ENABLED` | `true` | Set to `false` to skip loading the reranker: faster and lighter, slightly less accurate |
+| `HF_HUB_OFFLINE` | `0` | Set to `1` after the models are downloaded |
+| `CHROMA_PATH` | `./data/chroma` | Where articles are stored |
+
+The frontend has no settings. In development, `npm start` forwards `/api` and `/health` to `http://127.0.0.1:8000` (see `frontend/proxy.conf.json`). If you serve a built copy of the frontend from a different address than the backend, the backend will need CORS enabled; that is not set up.
 
 ## How it works
 
-**Store an article**
+A follow-up like "How long do I have to return it?" cannot be searched on its own, because the search does not know what "it" is. The backend handles a chat message in five steps:
 
 ```
-POST /articles {title, content, category}
-  → chunk (by headings / paragraphs)
-  → embed chunks → save in ChromaDB            (vector index, source of truth)
-  → rebuild BM25 from all chunks               (keyword index, in memory)
+POST /chat {question, history}
+  1. REWRITE   no history → use the question as it is
+               else → Claude turns it into a standalone query (last 12 messages)
+               e.g. "Return window for the Trailblazer Pro TB-PRO-22 jacket"
+  2. RETRIEVE  vector search: by meaning (bge-small-en-v1.5 + ChromaDB)
+               BM25: by exact words, so TB-PRO-22 is not confused with TB-PRO-23
+  3. FUSE      merge both lists by rank (Reciprocal Rank Fusion)
+  4. RERANK    a cross-encoder (bge-reranker-base) re-orders the top candidates
+  5. ANSWER    Claude writes one answer from the top 3 articles, or says the
+               question is off-topic or not covered
 ```
 
-**Search**
-
-```
-POST /search {question, history}
-  1. QUERY     history empty → use the question
-               else → Claude rewrite (last 12 history items) → standalone query
-               small talk → stop, empty results
-  2. RETRIEVE  vector: embed query → ChromaDB → top 20 chunks
-               BM25:   tokenize query → score all chunks → top 20      (in parallel)
-  3. FUSE      RRF: score(chunk) = Σ 1 / (60 + rank in each list)
-  4. RERANK    top 10 fused chunks → cross-encoder (query, chunk) → re-sort
-  5. GROUP     best chunk per article → top_k articles
-```
-
-Each stage can be switched off per request, which is how the benchmark compares them.
+Storing an article splits it into chunks by heading, embeds them into ChromaDB, and rebuilds the keyword index, so a new article is searchable immediately.
 
 | Data | Where | Lifetime |
 |---|---|---|
-| Articles (chunks + vectors + metadata) | ChromaDB on disk (`data/chroma`) | permanent; source of truth |
-| BM25 keyword index | memory | rebuilt from ChromaDB at startup and after every article change |
-| Conversations | nowhere | sent with each request, discarded |
-| Rewrites | `data/cache/rewrites.json` | cache only |
+| Articles | ChromaDB on disk (`data/chroma`) | permanent |
+| Keyword index | memory | rebuilt at startup and after every article change |
+| Conversations | nowhere | sent with each request, then discarded |
+| Rewrites and answers | `data/cache/` | caches, so repeated questions cost nothing |
 
 ## API
 
@@ -62,27 +133,47 @@ Base path `/api/v1/support`. Every response uses one envelope:
 {"success": false, "error": {"code": "ARTICLE_NOT_FOUND", "message": "...", "details": null}, "meta": {}}
 ```
 
+### Chat: `POST /chat`
+
+```json
+{"question": "No, I meant the backpack, not the tent.",
+ "history": ["What's the warranty on your tents?", "Basecamp tents are covered for five years."]}
+```
+
+`question` is 1–2,000 characters. `history` is optional: earlier messages as plain strings, oldest first, up to 100 (only the last 12 are used).
+
+Response `data`: `question`, `answer`, `kind`, `sources[]` of `{article_id, title}`, `search_query`, `rewrite_fallback`, `answer_fallback`.
+
+| `kind` | When | `answer` |
+|---|---|---|
+| `answer` | The articles contain the answer | Written by Claude from the articles only; `sources` lists the articles used |
+| `not_found` | A real support question the articles do not cover | Fixed message: could not find it, contact support |
+| `off_topic` | Not about the store (general knowledge, nonsense, attempts to override instructions) | Fixed message: can only help with store support |
+| `small_talk` | Greeting, thanks, goodbye | One short friendly line |
+
+If Claude is unavailable, the request still succeeds: `answer_fallback` is `true` and the answer quotes the best-matching article.
+
 ### Articles
 
 | Method | Path | Body | Success |
 |---|---|---|---|
-| `POST` | `/articles` | `{title, content, category?}` | `201` → `ArticleResult` |
-| `GET` | `/articles?category=returns` | | `200` → list of `ArticleSummary` |
-| `GET` | `/articles/{article_id}` | | `200` → `ArticleResult` (full content) |
-| `PUT` | `/articles/{article_id}` | `{title, content, category?}` | `200` → `ArticleResult` |
+| `POST` | `/articles` | `{title, content, category?}` | `201` → the stored article |
+| `GET` | `/articles?category=returns` | | `200` → list of summaries |
+| `GET` | `/articles/{article_id}` | | `200` → the article with full content |
+| `PUT` | `/articles/{article_id}` | `{title, content, category?}` | `200` → the replaced article |
 | `DELETE` | `/articles/{article_id}` | | `200` → `{"id": "KB-...", "deleted": true}` |
 
-Validation: `title` 3–200 chars; `content` 20–20,000 chars; `category` optional, lowercase letters/digits/hyphens, ≤ 50 chars.
+`title` is 3–200 characters, `content` 20–20,000 characters of text (Markdown is fine), `category` optional: lowercase letters, digits, hyphens, up to 50 characters. Only text is supported; PDF, Word, and Excel files must be converted to text first.
 
 ### Search: `POST /search`
+
+The ranked list of articles without a written answer, with a switch for every stage. The benchmark uses it to compare stages.
 
 ```json
 {
   "question": "How long do I have to return it?",
-  "history": [
-    "Do you sell the Trailblazer jacket in waterproof?",
-    "Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof."
-  ],
+  "history": ["Do you sell the Trailblazer jacket in waterproof?",
+              "Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof."],
   "top_k": 3,
   "query_mode": "rewrite",
   "retrieval": "hybrid",
@@ -93,41 +184,13 @@ Validation: `title` 3–200 chars; `content` 20–20,000 chars; `category` optio
 
 | Field | Values | Default |
 |---|---|---|
-| `question` | 1–2,000 chars, required | |
-| `history` | plain strings, oldest first, ≤ 100 items (only the last 12 are used) | `[]` |
 | `top_k` | 1–10 | `3` |
 | `query_mode` | `rewrite` · `question_only` · `full_history` | `rewrite` |
 | `retrieval` | `hybrid` · `vector` · `keyword` | `hybrid` |
 | `rerank` | `true` · `false` | `true` |
 | `include_debug` | `true` · `false` | `false` |
 
-Response `data` (`SupportSearchResult`): `question`, `search_query`, `query_mode`, `retrieval`, `rerank`, `needs_retrieval`, `rewrite_source`, `rewrite_fallback`, `rerank_fallback`, `score_type`, and `results[]` of `{article_id, title, category, score, snippet, debug?}`.
-
-`score_type` tells you which stage produced `score`: `cosine` (vector only), `bm25` (keyword only), `rrf` (hybrid, no rerank), `rerank` (reranked). With `include_debug: true` each result carries `vector_rank`, `keyword_rank`, `rrf_score`, `rerank_score`.
-
-### Chat: `POST /chat`
-
-One grounded answer instead of a ranked list. The body has only `question` and optional `history`; the pipeline is always rewrite → hybrid → rerank, with the top 3 articles (full text) given to Claude.
-
-```json
-{"question": "No, I meant the backpack, not the tent.",
- "history": ["What's the warranty on your tents?", "Basecamp tents are covered for five years."]}
-```
-
-Response `data` (`ChatResult`): `question`, `answer`, `kind`, `sources[]` of `{article_id, title}`, `search_query`, `rewrite_fallback`, `answer_fallback`.
-
-| `kind` | When | `answer` |
-|---|---|---|
-| `answer` | The articles contain the answer | Written by Claude from the articles only; `sources` lists the articles used |
-| `not_found` | A real support question the articles do not cover | Fixed message: could not find it, contact support |
-| `off_topic` | Not about the store (general knowledge, nonsense, attempts to override instructions) | Fixed message: can only help with store support |
-| `small_talk` | Greeting, thanks, goodbye | One short friendly line |
-
-If Claude is unavailable (no key, error, or call budget spent), the request still succeeds: `answer_fallback` is `true` and the answer quotes the best-matching article. Answers are cached in `data/cache/answers.json`, keyed by a hash of the question, history, and article text.
-
-### Health: `GET /health`
-
-`data`: `status`, `environment`, `embedding_model_loaded`, `reranker_loaded`, `vector_store`, `keyword_index_chunks`, `rewrite_provider`.
+Response `data`: `search_query`, `needs_retrieval`, `rewrite_source`, `rewrite_fallback`, `rerank_fallback`, `score_type`, and `results[]` of `{article_id, title, category, score, snippet, debug?}`. `score_type` says which stage produced `score`: `cosine`, `bm25`, `rrf`, or `rerank`. `top_k`, `rerank`, and `include_debug` are strictly typed: `"3"` or `"false"` is rejected.
 
 ### Errors
 
@@ -135,105 +198,49 @@ If Claude is unavailable (no key, error, or call budget spent), the request stil
 |---|---|---|
 | 422 | `VALIDATION_ERROR` | Bad body or parameters |
 | 404 | `ARTICLE_NOT_FOUND` | Unknown article ID |
-| 409 | `KB_EMPTY` | Search with no articles |
-| 409 | `RERANKER_DISABLED` | `rerank: true` while `RERANK_ENABLED=false` |
-| 503 | `MODEL_NOT_READY` | Models not loaded |
+| 409 | `KB_EMPTY` | No articles stored |
+| 409 | `RERANKER_DISABLED` | `/search` with `rerank: true` while `RERANK_ENABLED=false` |
+| 503 | `MODEL_NOT_READY` | Models not loaded yet |
 | 503 | `VECTOR_STORE_ERROR` | ChromaDB failure |
 | 502 / 504 | `LLM_ERROR` / `LLM_TIMEOUT` | Only when `REWRITE_STRICT=true` |
-| 500 | `INTERNAL_ERROR` | Anything else (logged, generic message) |
+| 500 | `INTERNAL_ERROR` | Anything else |
 
-A failed rewrite never fails a search (falls back to the question, `rewrite_fallback: true`). A failed reranker returns the fused order (`rerank_fallback: true`).
+A failed rewrite or a failed reranker never fails a request; the response flags it instead (`rewrite_fallback`, `rerank_fallback`).
 
-## Setup (PowerShell)
+## Cost and speed
 
-Requirements: [uv](https://docs.astral.sh/uv/) (it installs Python 3.12 for you) and, for the rewrite stage, an Anthropic API key.
-
-```powershell
-uv sync                                   # install from uv.lock (CPU-only torch)
-Copy-Item .env.example .env.dev           # then put your key in ANTHROPIC_API_KEY
-uv run python -m scripts.seed_kb          # load the 40 starter articles from data/kb
-$env:APP_ENV = "dev"; uv run uvicorn src.main:app --reload
-```
-
-Open http://127.0.0.1:8000/docs. The first start downloads `BAAI/bge-small-en-v1.5` (~130 MB) and `BAAI/bge-reranker-base` (~1.1 GB) into the Hugging Face cache; afterwards set `HF_HUB_OFFLINE=1` in `.env.dev`.
-
-Environment is loaded from `.env.{APP_ENV}` (`.env.dev`, `.env.uat`), both gitignored. Every non-secret value has a default in code; `.env.example` lists them all. Without a key, or with `REWRITE_PROVIDER=none`, everything works except the rewrite (searches fall back to the question and report `rewrite_fallback: true`).
-
-## Try it (PowerShell)
-
-```powershell
-$base = "http://127.0.0.1:8000/api/v1/support"
-
-# Create, read, update, delete an article
-$body = @{ title = "Snowshoe Rental"; category = "rentals"
-           content = "## Prices`nRent MSR-EVO-9 snowshoes for 15 dollars per day at the flagship store." } | ConvertTo-Json
-$created = Invoke-RestMethod "$base/articles" -Method Post -ContentType "application/json" -Body $body
-$id = $created.data.id
-Invoke-RestMethod "$base/articles/$id"
-Invoke-RestMethod "$base/articles?category=rentals"
-Invoke-RestMethod "$base/articles/$id" -Method Put -ContentType "application/json" -Body $body
-Invoke-RestMethod "$base/articles/$id" -Method Delete
-
-# Search: the full pipeline (rewrite → hybrid → rerank)
-$search = @{
-  question = "How long do I have to return it?"
-  history  = @("Do you sell the Trailblazer jacket in waterproof?",
-               "Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof.")
-  include_debug = $true
-} | ConvertTo-Json
-(Invoke-RestMethod "$base/search" -Method Post -ContentType "application/json" -Body $search).data
-```
-
-Change one switch at a time (in Swagger or in the body above) and compare `search_query`, `score_type`, and the debug ranks:
-
-| Body | Pipeline | `score_type` |
-|---|---|---|
-| `"query_mode": "question_only", "retrieval": "vector", "rerank": false` | naive vector search | `cosine` |
-| `"query_mode": "question_only", "retrieval": "keyword", "rerank": false` | BM25 only | `bm25` |
-| `"query_mode": "question_only", "retrieval": "hybrid", "rerank": false` | vector + BM25 fused with RRF | `rrf` |
-| `"query_mode": "full_history", "retrieval": "vector", "rerank": false` | naive with the last 12 history items pasted in | `cosine` |
-| `"query_mode": "rewrite", "retrieval": "hybrid", "rerank": false` | Claude rewrite + hybrid | `rrf` |
-| `"query_mode": "rewrite", "retrieval": "hybrid", "rerank": true` (defaults) | full pipeline | `rerank` |
-
-`rewrite_source` tells you what the query stage did: `llm`, `cache`, `skipped` (no history, Claude not called), `fallback` (Claude failed), `disabled` (no provider or key), or `none` (a baseline `query_mode`).
+- **Claude calls.** A chat message costs one call for the answer, plus one for the rewrite when there is earlier conversation. Repeated questions are served from the caches. The model is `claude-haiku-5-5`.
+- **Hard cap.** Every call is counted in `data/cache/llm_call_budget.json`. At `LLM_CALL_BUDGET` (500 by default) further calls are refused, and the chat falls back to quoting the best article. Raise the setting or delete that file to reset the count.
+- **Speed.** A chat answer takes 3 to 5 seconds on a laptop CPU. Most of that is the reranker (about 0.3 s per candidate). `RERANK_ENABLED=false` removes it.
+- **Privacy.** Questions, history, and article text are never written to the logs, and conversations are not stored. The caches hold hashed keys and the generated text only.
 
 ## Benchmark
 
-`uv run python -m scripts.run_benchmark` runs the 33 eval conversations through six configurations and regenerates the tables in [`docs/BENCHMARK.md`](docs/BENCHMARK.md). Summary of the committed run (30 retrieval cases, 3 small-talk cases):
+`uv run python -m scripts.run_benchmark` runs 33 test conversations through six search configurations and regenerates [`docs/BENCHMARK.md`](docs/BENCHMARK.md). It measures the search stages (`/search`), not the written answers.
 
-| # | Config | hit@1 | hit@3 | MRR | small talk | avg latency |
-|---|---|---|---|---|---|---|
-| 1 | Naive (question only, vector) | 0.63 | 0.83 | 0.767 | 0/3 | ~0.1 s |
-| 3 | + Rewrite | 0.70 | 0.97 | 0.831 | 3/3 | ~0.8 s |
-| 4 | + Hybrid (BM25 + RRF) | 0.80 | 0.93 | 0.870 | 3/3 | ~0.8 s |
-| 5 | Full pipeline (+ rerank) | 0.77 | 0.97 | 0.864 | 3/3 | ~3.3 s |
+| Config | hit@1 | hit@3 | MRR |
+|---|---|---|---|
+| Naive (question only, vector search) | 0.63 | 0.83 | 0.767 |
+| + Rewrite | 0.70 | 0.97 | 0.831 |
+| + Hybrid (adds BM25) | 0.80 | 0.93 | 0.870 |
+| Full pipeline (+ rerank) | 0.77 | 0.97 | 0.864 |
 
-- The rewrite fixes follow-ups (follow-up hit@1 0.53 → 0.65, corrections 0.50 → 1.00) and detects small talk.
-- BM25 fixes exact product codes (`exact_code` hit@1 0.80 → 1.00).
-- Reranking improves hit@3 but **not** hit@1 or MRR on this set, and it pushes p95 latency to about 4.7 s on the laptop CPU used, above the 3 s target. Both shortfalls, their causes, and the options are explained in `docs/BENCHMARK.md`.
+The rewrite fixes follow-up questions and BM25 fixes exact product codes. Reranking improves the top 3 but not the top 1 on this set, and it is the slow stage; `docs/BENCHMARK.md` explains both.
 
-## Cost and latency notes
-
-- Claude is called only for `query_mode: "rewrite"` with non-empty history, with at most the last 12 history items, and results are cached in `data/cache/rewrites.json` (keys are hashes; the question and history are not written to disk).
-- A hard cap on real Claude calls is enforced in code: every HTTP attempt increments `data/cache/llm_call_budget.json`, and at `LLM_CALL_BUDGET` (500 by default) Claude calls are refused with "LLM budget exhausted": searches fall back to the question and chat falls back to quoting the best article. The cap was 50 for the original build (which used 39) and was raised to 500 when the chat endpoint was added. A chat message costs one call for the answer, plus one for the rewrite when there is history; repeats are served from the caches. Raise `LLM_CALL_BUDGET` or delete that one file to reset the counter.
-- Reranking is the slow stage on CPU (about 0.3 s per candidate on a 12th-gen i5 laptop). `RERANK_CANDIDATES` trades quality for latency; `"rerank": false` skips it per request; `RERANK_ENABLED=false` skips loading the model.
-- There is no relevance cut-off by default: an off-topic question still returns the nearest articles, with low scores. `RERANK_MIN_SCORE` is an opt-in filter on rerank scores; on the benchmark a value of 0.01 also removed correct articles, so calibrate it on your own data before enabling it.
-- `top_k`, `rerank`, and `include_debug` are strictly typed: `"3"` or `"false"` is a 422, not a silent conversion.
-- Questions, history, and article content are never logged; logs carry lengths, modes, counts, timings, and a request ID.
-
-## Tests and quality gates
+## Tests
 
 ```powershell
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src
-uv run pytest                      # default suite, fakes only: no API calls, no model downloads
-uv run pytest -m model --no-cov    # real models (downloads on first run); run once
-uv run pytest -m live --no-cov     # 5 real Claude calls (up to 10 with retries); run once
-uv run pre-commit install          # optional: run ruff + mypy before each commit
+uv run pytest                      # default suite: no Claude calls, no model downloads
+uv run pytest -m model --no-cov    # uses the real models
+uv run pytest -m live --no-cov     # makes real Claude calls (5 to 10)
 ```
 
-## Docker
+The frontend has no automated tests. `cd frontend; npx ng build` checks that it compiles.
+
+## Docker (backend only)
 
 ```powershell
 docker build -t support-query-transformer .
@@ -241,39 +248,27 @@ docker run --rm -p 8000:8000 --env-file .env.uat `
   -v sqt-chroma:/app/data/chroma `
   -v sqt-hf:/home/app/.cache/huggingface `
   support-query-transformer
-# seed the container's knowledge base (once per chroma volume)
+# load the starter articles into the container's volume (once)
 docker run --rm --env-file .env.uat -v sqt-chroma:/app/data/chroma -v sqt-hf:/home/app/.cache/huggingface `
   support-query-transformer python -m scripts.seed_kb
 ```
 
-The image is multi-stage, CPU-only, and runs as a non-root user. The vector index and the Hugging Face model cache live in volumes; `.env*` files are never copied into the image. `GET /health` reports `embedding_model_loaded`, `reranker_loaded`, `vector_store`, `keyword_index_chunks`, and `rewrite_provider`.
-
-## Frontend (Angular)
-
-`frontend/` holds a small Angular 17 app with a chat screen (one message box, one answer per message, like a chat assistant) and an articles screen (upload a `.md` / `.txt` file, list, delete). With the backend running on port 8000:
-
-```powershell
-cd frontend
-npm install     # first time only
-npm start       # http://localhost:4200, proxies /api and /health to the backend
-```
-
-Details are in [`frontend/README.md`](frontend/README.md).
+Create `.env.uat` from `.env.example` first. The image is CPU-only and runs as a non-root user; articles and the model cache live in the two volumes. The frontend is not in the image: run it with `npm start` as above.
 
 ## Project layout
 
 ```
-frontend/                        Angular app (search + article upload), dev proxy to the API
+frontend/                        Angular app: chat + article upload, dev proxy to the API
 src/
   main.py, api_router.py         app creation, central /api/v1 router
-  core/                          DI providers, lifespan, exceptions + ONE handler, middleware, envelope
+  core/                          startup, dependency providers, error handling, middleware
   domains/support_search/        routers/ schemas/ services/ prompts/ chunking/
-  llm/ embeddings/ vectorstore/ keyword_search/ reranking/    Protocol (base.py) + one implementation each
-  utils/                         rank_fusion.py (RRF), hashing.py, env.py
+  llm/ embeddings/ vectorstore/ keyword_search/ reranking/    one interface + one implementation each
+  utils/                         rank fusion, hashing, env helpers
 scripts/                         seed_kb.py, run_benchmark.py
-data/kb/, data/eval/             starter articles and eval conversations (committed)
-tests/                           unit/, integration/, model/ (marker), live/ (marker), fakes.py
-docs/                            DECISIONS.md (deviations from the design doc), BENCHMARK.md
+data/kb/, data/eval/             starter articles and benchmark conversations
+tests/                           unit/, integration/, model/, live/
+docs/                            SAMPLE_QUESTIONS.md, BENCHMARK.md, DECISIONS.md
 ```
 
-Conventions and "how to extend" notes are in [`CLAUDE.md`](CLAUDE.md); the design baseline is [`support-query-transformer-workflow.md`](support-query-transformer-workflow.md).
+Coding conventions and how to extend the project are in [`CLAUDE.md`](CLAUDE.md). The original design is in [`support-query-transformer-workflow.md`](support-query-transformer-workflow.md), and where the build departs from it is listed in [`docs/DECISIONS.md`](docs/DECISIONS.md).
