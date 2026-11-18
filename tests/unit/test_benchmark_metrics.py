@@ -90,6 +90,7 @@ def test_render_tables_has_six_configs_and_per_pattern_rows() -> None:
         "rrf_k": 60,
         "rerank_candidates": 10,
         "max_history": 12,
+        "rerank_min_score": 0.01,
         "llm_calls_this_run": 0,
         "llm_calls_total": 11,
         "llm_call_budget": 50,

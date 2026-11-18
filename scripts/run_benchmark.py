@@ -38,6 +38,7 @@ from src.domains.support_search.services.query_service import (
 from src.domains.support_search.services.retrieval_service import (
     DEFAULT_CANDIDATES_PER_RETRIEVER,
     DEFAULT_RERANK_CANDIDATES,
+    DEFAULT_RERANK_MIN_SCORE,
     RetrievalService,
 )
 from src.domains.support_search.services.support_search_service import SupportSearchService
@@ -47,7 +48,7 @@ from src.llm.cached_rewriter import CachedRewriter
 from src.llm.call_budget import DEFAULT_BUDGET_PATH, DEFAULT_LLM_CALL_BUDGET, LlmCallBudget
 from src.main import PROJECT_ROOT, load_environment
 from src.reranking.bge_reranker import DEFAULT_RERANKER_MODEL, BgeReranker
-from src.utils.env import env_int, env_str
+from src.utils.env import env_float, env_int, env_str
 from src.utils.rank_fusion import DEFAULT_RRF_K
 from src.vectorstore.chroma_store import ChromaStore
 
@@ -158,6 +159,7 @@ def render_tables(results: list[CaseResult], meta: dict[str, Any]) -> str:
         "",
         f"Settings: `CANDIDATES_PER_RETRIEVER={meta['candidates']}`, `RRF_K={meta['rrf_k']}`, "
         f"`RERANK_CANDIDATES={meta['rerank_candidates']}`, "
+        f"`RERANK_MIN_SCORE={meta['rerank_min_score']}`, "
         f"`MAX_HISTORY_MESSAGES={meta['max_history']}`.",
         "",
         f"Claude calls made by this run: {meta['llm_calls_this_run']} "
@@ -303,6 +305,7 @@ async def main() -> None:
     rrf_k = env_int("RRF_K", DEFAULT_RRF_K)
     rerank_candidates = env_int("RERANK_CANDIDATES", DEFAULT_RERANK_CANDIDATES)
     max_history = env_int("MAX_HISTORY_MESSAGES", DEFAULT_MAX_HISTORY_MESSAGES)
+    rerank_min_score = env_float("RERANK_MIN_SCORE", DEFAULT_RERANK_MIN_SCORE)
     query_service = QueryService(rewriter, max_history_messages=max_history)
     service = SupportSearchService(
         query_service=query_service,
@@ -314,6 +317,7 @@ async def main() -> None:
             candidates_per_retriever=candidates,
             rrf_k=rrf_k,
             rerank_candidates=rerank_candidates,
+            rerank_min_score=rerank_min_score,
         ),
         keyword_index=keyword_index,
     )
@@ -348,6 +352,7 @@ async def main() -> None:
         "rrf_k": rrf_k,
         "rerank_candidates": rerank_candidates,
         "max_history": max_history,
+        "rerank_min_score": rerank_min_score,
         "llm_calls_this_run": budget.used() - calls_before,
         "llm_calls_total": budget.used(),
         "llm_call_budget": budget.limit,

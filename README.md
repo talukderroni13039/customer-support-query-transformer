@@ -193,8 +193,10 @@ Change one switch at a time (in Swagger or in the body above) and compare `searc
 ## Cost and latency notes
 
 - Claude is called only for `query_mode: "rewrite"` with non-empty history, with at most the last 12 history items, and results are cached in `data/cache/rewrites.json` (keys are hashes; the question and history are not written to disk).
-- A hard cap on real Claude calls is enforced in code: every HTTP attempt increments `data/cache/llm_call_budget.json`, and at `LLM_CALL_BUDGET` (50) the rewriter refuses with "LLM budget exhausted" and searches fall back to the question. The whole build used 33 calls. Raise `LLM_CALL_BUDGET` or delete that one file to reset the counter for your own use.
+- A hard cap on real Claude calls is enforced in code: every HTTP attempt increments `data/cache/llm_call_budget.json`, and at `LLM_CALL_BUDGET` (50) the rewriter refuses with "LLM budget exhausted" and searches fall back to the question. The build used 33 calls and the later QA pass 6 more (39 in total). Raise `LLM_CALL_BUDGET` or delete that one file to reset the counter for your own use.
 - Reranking is the slow stage on CPU (about 0.3 s per candidate on a 12th-gen i5 laptop). `RERANK_CANDIDATES` trades quality for latency; `"rerank": false` skips it per request; `RERANK_ENABLED=false` skips loading the model.
+- There is no relevance cut-off by default: an off-topic question still returns the nearest articles, with low scores. `RERANK_MIN_SCORE` is an opt-in filter on rerank scores; on the benchmark a value of 0.01 also removed correct articles, so calibrate it on your own data before enabling it.
+- `top_k`, `rerank`, and `include_debug` are strictly typed: `"3"` or `"false"` is a 422, not a silent conversion.
 - Questions, history, and article content are never logged; logs carry lengths, modes, counts, timings, and a request ID.
 
 ## Tests and quality gates
@@ -203,7 +205,7 @@ Change one switch at a time (in Swagger or in the body above) and compare `searc
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy src
-uv run pytest                      # 186 tests, fakes only: no API calls, no model downloads
+uv run pytest                      # default suite, fakes only: no API calls, no model downloads
 uv run pytest -m model --no-cov    # real models (downloads on first run); run once
 uv run pytest -m live --no-cov     # 5 real Claude calls (up to 10 with retries); run once
 uv run pre-commit install          # optional: run ruff + mypy before each commit

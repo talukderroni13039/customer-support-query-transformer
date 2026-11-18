@@ -112,14 +112,13 @@ class SupportSearchService:
         )
 
         if plan.needs_retrieval:
+            top_k = request.top_k or self._default_top_k
             # 2. Retrieval stage (vector / keyword / hybrid + RRF, then rerank)
             outcome = await self._retrieval.retrieve(
-                plan.search_query, request.retrieval, request.rerank
+                plan.search_query, request.retrieval, request.rerank, min_articles=top_k
             )
             # 3. Group by article
-            result.results = group_by_article(
-                outcome.chunks, request.top_k or self._default_top_k, request.include_debug
-            )
+            result.results = group_by_article(outcome.chunks, top_k, request.include_debug)
             result.rerank_fallback = outcome.rerank_fallback
             result.score_type = outcome.score_type
 

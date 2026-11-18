@@ -26,3 +26,7 @@ Deviations from `support-query-transformer-workflow.md` on non-binding points. O
 | 20 | `top_k` in the request is optional and defaults to `DEFAULT_TOP_K` on the server | Honors the env default from doc section 8 instead of hardcoding 3 in the schema |
 | 21 | Added `LLM_BUDGET_PATH` env variable | The budget file location must be configurable for tests and containers |
 | 22 | The KB-empty and reranker-disabled checks run before the query stage | A request that cannot succeed must never cost a Claude call |
+| 23 | The candidate window per retriever starts at `CANDIDATES_PER_RETRIEVER` and doubles (up to 320) until it holds `top_k` distinct articles or the retrievers are exhausted | QA: results are grouped by article, so a fixed 20-chunk window returned 8 articles for `top_k=10` |
+| 24 | The rerank pool stays at `RERANK_CANDIDATES` chunks, but duplicate-article chunks give way to the best chunk of unseen articles when the top chunks cover fewer than `top_k` articles | QA: `top_k=10` with rerank returned 4 articles; benchmark quality is unchanged by this |
+| 25 | `top_k`, `rerank`, and `include_debug` are strict types (`"3"`, `"false"`, `1` → 422) | QA: Pydantic silently coerced wrongly typed switches |
+| 26 | Added `RERANK_MIN_SCORE` (opt-in, default 0 = off) | QA: off-topic questions return near-zero rerank scores, but a 0.01 cut-off also removed correct articles on the benchmark (hit@3 0.97 → 0.90), so it is not enabled by default |

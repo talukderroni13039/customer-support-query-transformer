@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints
 
 MAX_TEXT_CHARS = 2000
 MAX_HISTORY_ITEMS = 100
@@ -56,13 +56,14 @@ class SearchRequest(BaseModel):
         max_length=MAX_HISTORY_ITEMS,
         description="Earlier messages as plain strings, oldest first. Only the last 12 are used.",
     )
-    top_k: int | None = Field(
+    # Strict types: "3", "yes", or 1 are rejected instead of being silently coerced.
+    top_k: StrictInt | None = Field(
         default=None, ge=1, le=10, description="Articles to return. Defaults to DEFAULT_TOP_K (3)."
     )
     query_mode: QueryMode = QueryMode.REWRITE
     retrieval: RetrievalMode = RetrievalMode.HYBRID
-    rerank: bool = True
-    include_debug: bool = False
+    rerank: StrictBool = True
+    include_debug: StrictBool = False
 
 
 class StageDebug(BaseModel):

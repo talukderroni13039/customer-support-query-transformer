@@ -336,3 +336,100 @@ def test_search_runs_while_bm25_is_rebuilt(
         stop.set()
         thread.join(timeout=10)
     assert failures == []
+
+
+# --- QA regressions ------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"top_k": "3"},
+        {"top_k": 3.0},
+        {"top_k": True},
+        {"rerank": "false"},
+        {"rerank": 0},
+        {"include_debug": "yes"},
+        {"include_debug": 1},
+    ],
+)
+def test_wrongly_typed_switches_are_rejected_not_coerced(
+    seeded_client: TestClient, overrides: dict[str, Any]
+) -> None:
+    err(search(seeded_client, question="warranty", **overrides), 422, "VALIDATION_ERROR")
+
+
+@pytest.mark.parametrize("rerank", [False, True])
+def test_top_k_is_filled_even_when_one_long_article_crowds_the_candidates(
+    seeded_client: TestClient, rerank: bool
+) -> None:
+    sections = "".join(
+        f"## Part {i}\nShell jacket care and shell jacket repair, part {i}.\n\n" for i in range(30)
+    )
+    ok(
+        seeded_client.post(ARTICLES, json={"title": "Shell Jacket Handbook", "content": sections}),
+        201,
+    )
+    data = ok(
+        search(
+            seeded_client,
+            question="shell jacket",
+            query_mode="question_only",
+            retrieval="vector",
+            rerank=rerank,
+            top_k=5,
+        )
+    )
+    titles = [r["title"] for r in data["results"]]
+    assert len(set(titles)) == len(titles)
+    # 5 articles exist and top_k=5: all of them come back, with or without reranking.
+    assert len(titles) == 5
+    assert "Shell Jacket Handbook" in titles
+
+
+def test_off_topic_question_still_returns_results_by_default(seeded_client: TestClient) -> None:
+    """No relevance cut-off by default: cross-encoder scores are not calibrated enough."""
+    data = ok(search(seeded_client, question="zzzz qqqq xxxx", query_mode="question_only"))
+    assert data["needs_retrieval"] is True
+    assert len(data["results"]) == 3
+    assert data["score_type"] == "rerank"
+
+
+def test_opt_in_rerank_min_score_drops_off_topic_results(
+    seeded_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RERANK_MIN_SCORE", "0.01")
+    data = ok(search(seeded_client, question="zzzz qqqq xxxx", query_mode="question_only"))
+    assert data["needs_retrieval"] is True
+    assert data["results"] == []
+    assert data["score_type"] == "rerank"
+    assert data["rerank_fallback"] is False
+    relevant = ok(search(seeded_client, question="shipping to Canada", query_mode="question_only"))
+    assert relevant["results"][0]["title"] == "Shipping to Canada"
+    unranked = ok(
+        search(seeded_client, question="zzzz qqqq xxxx", query_mode="question_only", rerank=False)
+    )
+    assert len(unranked["results"]) == 3  # the cut-off applies to rerank scores only
+
+
+def test_awkward_but_valid_questions_never_error(seeded_client: TestClient) -> None:
+    for question in [
+        "?!?!...",
+        "is it the of and to",
+        "\U0001f44d\U0001f525",
+        "'; DROP TABLE articles; --",
+        "<script>alert('x')</script>",
+        "returns\u0000 policy\u0007",
+        "\u0645\u0627 \u0647\u064a \u0633\u064a\u0627\u0633\u0629",
+        "q" * 2000,
+    ]:
+        for retrieval in ("vector", "keyword", "hybrid"):
+            data = ok(
+                search(
+                    seeded_client,
+                    question=question,
+                    query_mode="question_only",
+                    retrieval=retrieval,
+                )
+            )
+            assert isinstance(data["results"], list)

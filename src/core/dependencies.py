@@ -15,6 +15,7 @@ from src.domains.support_search.services.query_service import (
 from src.domains.support_search.services.retrieval_service import (
     DEFAULT_CANDIDATES_PER_RETRIEVER,
     DEFAULT_RERANK_CANDIDATES,
+    DEFAULT_RERANK_MIN_SCORE,
     RetrievalService,
 )
 from src.domains.support_search.services.support_search_service import (
@@ -25,7 +26,7 @@ from src.embeddings.base import Embedder
 from src.keyword_search.base import KeywordIndex
 from src.llm.base import QueryRewriter
 from src.reranking.base import Reranker
-from src.utils.env import env_bool, env_int
+from src.utils.env import env_bool, env_float, env_int
 from src.utils.rank_fusion import DEFAULT_RRF_K
 from src.vectorstore.base import VectorStore
 
@@ -99,6 +100,7 @@ def get_retrieval_service(
         ),
         rrf_k=env_int("RRF_K", DEFAULT_RRF_K),
         rerank_candidates=env_int("RERANK_CANDIDATES", DEFAULT_RERANK_CANDIDATES),
+        rerank_min_score=env_float("RERANK_MIN_SCORE", DEFAULT_RERANK_MIN_SCORE),
     )
 
 

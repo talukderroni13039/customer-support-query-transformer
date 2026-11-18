@@ -36,9 +36,10 @@ docker run --rm -p 8000:8000 --env-file .env.uat -v sqt-chroma:/app/data/chroma 
 ## 4. Pipeline rules
 
 - **Query stage** (`query_service.py`): `question_only` → question; `full_history` → last 12 history items + question; `rewrite` → empty history skips Claude, otherwise `CachedRewriter` → Claude. Rewrite error → question + `rewrite_fallback=true`. `needs_retrieval=false` → empty results, no retrieval.
-- **Retrieval stage** (`retrieval_service.py`): `vector` | `keyword` | `hybrid` (both in parallel threads), top `CANDIDATES_PER_RETRIEVER` each.
+- **Retrieval stage** (`retrieval_service.py`): `vector` | `keyword` | `hybrid` (both in parallel threads), top `CANDIDATES_PER_RETRIEVER` each. The window doubles (max 320) until it holds `top_k` distinct articles or the retrievers are exhausted.
 - **Fusion:** `utils/rank_fusion.reciprocal_rank_fusion` (pure, `RRF_K=60`), ranks only, never raw scores.
-- **Rerank:** only the top `RERANK_CANDIDATES` of the ranked list; error → keep prior order + `rerank_fallback=true`.
+- **Rerank:** at most `RERANK_CANDIDATES` chunks (`select_rerank_pool`: the top chunks, made article-diverse only when needed to reach `top_k`); error → keep prior order + `rerank_fallback=true`. `RERANK_MIN_SCORE` is off by default; do not turn it on without benchmark evidence.
+- Request switches (`top_k`, `rerank`, `include_debug`) are strict types; never loosen them to coercing types.
 - **Grouping** (`support_search_service.py`): best chunk per article → `top_k` articles.
 - `ChunkHit` is the one shape passed between stages. `score_type` says which stage produced `score` (`cosine` / `bm25` / `rrf` / `rerank`).
 - **Any article write (create/update/delete/seed) must rebuild BM25** from ChromaDB (atomic swap, under the index write lock).

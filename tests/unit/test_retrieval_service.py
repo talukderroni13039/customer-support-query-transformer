@@ -7,7 +7,11 @@ from src.core.lifespan import AppResources
 from src.core.schemas.chunk import ChunkHit
 from src.domains.support_search.schemas import ArticleCreate, RetrievalMode, ScoreType
 from src.domains.support_search.services.article_service import ArticleService
-from src.domains.support_search.services.retrieval_service import RetrievalService
+from src.domains.support_search.services.retrieval_service import (
+    RankedChunk,
+    RetrievalService,
+    select_rerank_pool,
+)
 from tests.fakes import FakeReranker, Spy
 
 ARTICLES = {
@@ -228,3 +232,129 @@ async def test_rerank_with_no_candidates_skips_the_reranker(spies: tuple[Spy, Sp
     assert outcome.chunks == []
     assert reranker.calls == []
     assert outcome.rerank_fallback is False
+
+
+# --- QA regressions: enough distinct articles, rerank pool, minimum rerank score -------------
+
+
+@pytest.fixture
+async def long_article_kb(seeded: AppResources) -> AppResources:
+    """One long article whose many chunks all match the query crowds the candidate window."""
+    service = ArticleService(
+        embedder=seeded.embedder,
+        vector_store=seeded.vector_store,
+        keyword_index=seeded.keyword_index,
+        write_lock=seeded.index_write_lock,
+    )
+    content = "".join(
+        f"## Part {i}\nShell jacket care and shell jacket repair, part {i}.\n\n" for i in range(30)
+    )
+    await service.upsert("KB-900", ArticleCreate(title="Shell Jacket Handbook", content=content))
+    return seeded
+
+
+@pytest.mark.parametrize(
+    "mode", [RetrievalMode.VECTOR, RetrievalMode.KEYWORD, RetrievalMode.HYBRID]
+)
+async def test_candidate_window_widens_until_enough_distinct_articles(
+    long_article_kb: AppResources, mode: RetrievalMode
+) -> None:
+    service = RetrievalService(
+        embedder=long_article_kb.embedder,
+        vector_store=long_article_kb.vector_store,
+        keyword_index=long_article_kb.keyword_index,
+        candidates_per_retriever=5,
+    )
+    narrow = await service.retrieve("shell jacket", mode)  # min_articles=1: no widening
+    assert {c.hit.article_id for c in narrow.chunks} == {"KB-900"}
+    wide = await service.retrieve("shell jacket", mode, min_articles=3)
+    assert len({c.hit.article_id for c in wide.chunks}) >= 3
+    assert wide.chunks[0].hit.article_id == "KB-900"  # widening never reorders the top
+
+
+async def test_widening_stops_when_retrievers_are_exhausted(spies: tuple[Spy, Spy, Spy]) -> None:
+    _, vector_store, keyword_index = spies
+    service = make_service(spies, candidates_per_retriever=2)
+    outcome = await service.retrieve("TB-PRO-22", RetrievalMode.KEYWORD, min_articles=10)
+    assert [c.hit.article_id for c in outcome.chunks] == ["KB-101"]  # only one chunk matches
+    assert keyword_index.called("search") == 1  # 1 hit < 2 requested: nothing more to fetch
+    outcome = await service.retrieve("jacket", RetrievalMode.VECTOR, min_articles=10)
+    assert len(outcome.chunks) == 4  # the whole 4-chunk knowledge base, then it stops
+    assert vector_store.called("query") <= 3
+
+
+async def test_embedding_is_computed_once_even_when_the_window_widens(
+    long_article_kb: AppResources,
+) -> None:
+    embedder = Spy(long_article_kb.embedder)
+    service = RetrievalService(
+        embedder=embedder,  # type: ignore[arg-type]
+        vector_store=long_article_kb.vector_store,
+        keyword_index=long_article_kb.keyword_index,
+        candidates_per_retriever=5,
+    )
+    await service.retrieve("shell jacket", RetrievalMode.HYBRID, min_articles=4)
+    assert embedder.called("embed_query") == 1
+
+
+async def test_rerank_pool_covers_min_articles_without_exceeding_rerank_candidates(
+    long_article_kb: AppResources,
+) -> None:
+    reranker = FakeReranker()
+    service = RetrievalService(
+        embedder=long_article_kb.embedder,
+        vector_store=long_article_kb.vector_store,
+        keyword_index=long_article_kb.keyword_index,
+        reranker=reranker,
+        candidates_per_retriever=5,
+        rerank_candidates=4,
+    )
+    outcome = await service.retrieve(
+        "shell jacket", RetrievalMode.HYBRID, rerank=True, min_articles=3
+    )
+    _, candidates = reranker.calls[-1]
+    assert len(candidates) == 4  # never more than RERANK_CANDIDATES
+    assert len({c.article_id for c in candidates}) >= 3
+    assert len({c.hit.article_id for c in outcome.chunks}) >= 3
+
+
+def _ranked(chunk_id: str) -> RankedChunk:
+    article_id = chunk_id.split("::")[0]
+    return RankedChunk(
+        hit=ChunkHit(chunk_id=chunk_id, article_id=article_id, title="t", text="x", score=1.0)
+    )
+
+
+def test_select_rerank_pool() -> None:
+    chunks = [_ranked(c) for c in ("a::0", "a::1", "a::2", "b::0", "a::3", "c::0", "d::0")]
+
+    def ids(pool: list[RankedChunk]) -> list[str]:
+        return [c.hit.chunk_id for c in pool]
+
+    # Enough articles in the head: plain top-N, unchanged.
+    assert ids(select_rerank_pool(chunks, 4, min_articles=2)) == ["a::0", "a::1", "a::2", "b::0"]
+    assert ids(select_rerank_pool(chunks, 3, min_articles=1)) == ["a::0", "a::1", "a::2"]
+    # Too few articles in the head: duplicates give way to the next unseen articles, order kept.
+    assert ids(select_rerank_pool(chunks, 4, min_articles=3)) == ["a::0", "a::1", "b::0", "c::0"]
+    assert ids(select_rerank_pool(chunks, 4, min_articles=4)) == ["a::0", "b::0", "c::0", "d::0"]
+    # min_articles larger than the pool or than what exists: best effort, never over pool size.
+    assert ids(select_rerank_pool(chunks, 3, min_articles=10)) == ["a::0", "b::0", "c::0"]
+    assert ids(select_rerank_pool(chunks[:3], 5, min_articles=4)) == ["a::0", "a::1", "a::2"]
+    assert select_rerank_pool([], 5, min_articles=3) == []
+
+
+async def test_reranked_results_below_min_score_are_dropped(spies: tuple[Spy, Spy, Spy]) -> None:
+    off_topic = "zzzz qqqq"  # no word overlap with any chunk: the fake reranker scores 0.0
+    lenient = make_service(spies, reranker=FakeReranker())
+    assert len((await lenient.retrieve(off_topic, RetrievalMode.VECTOR, rerank=True)).chunks) == 4
+
+    strict = make_service(spies, reranker=FakeReranker(), rerank_min_score=0.01)
+    outcome = await strict.retrieve(off_topic, RetrievalMode.VECTOR, rerank=True)
+    assert outcome.chunks == []
+    assert outcome.score_type is ScoreType.RERANK
+    assert outcome.rerank_fallback is False
+    relevant = await strict.retrieve("returned within 60 days", RetrievalMode.VECTOR, rerank=True)
+    assert relevant.chunks[0].hit.article_id == "KB-012"
+    assert all(c.hit.score >= 0.01 for c in relevant.chunks)
+    # The threshold only applies to rerank scores, never to cosine / BM25 / RRF scores.
+    assert len((await strict.retrieve(off_topic, RetrievalMode.VECTOR, rerank=False)).chunks) == 4
