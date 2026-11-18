@@ -1,0 +1,24 @@
+# Secrets never enter the build context or the image
+.env
+.env.*
+
+# Runtime data lives in volumes
+data/chroma*
+data/cache
+
+# Not needed at runtime
+.git
+.github
+.venv
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.coverage
+htmlcov
+**/__pycache__
+tests
+docs
+*.md
+!README.md
+!data/kb/*.md
+.pre-commit-config.yaml

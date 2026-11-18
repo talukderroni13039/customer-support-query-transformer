@@ -1,0 +1,156 @@
+<header class="topbar">
+  <div class="brand">
+    <h1>Northwind Gear Support</h1>
+    @if (online() === false) {
+      <span class="state bad">offline</span>
+    }
+  </div>
+  <nav class="tabs">
+    <button type="button" [class.active]="tab() === 'chat'" (click)="tab.set('chat')">Chat</button>
+    <button type="button" [class.active]="tab() === 'articles'" (click)="tab.set('articles')">Articles</button>
+  </nav>
+</header>
+
+<!-- ============================== CHAT ============================== -->
+@if (tab() === 'chat') {
+  <main class="chat">
+    <div class="thread" #thread>
+      @if (messages().length === 0) {
+        <div class="welcome">
+          <h2>How can we help?</h2>
+          <p>Ask about orders, shipping, returns, warranty, sizing, payment, or our products.</p>
+          <div class="suggestions">
+            @for (suggestion of suggestions; track suggestion) {
+              <button type="button" (click)="ask(suggestion)">{{ suggestion }}</button>
+            }
+          </div>
+        </div>
+      }
+
+      @for (message of messages(); track $index) {
+        <div class="row" [class.user]="message.role === 'user'">
+          <div
+            class="bubble"
+            [class.user]="message.role === 'user'"
+            [class.notice]="message.kind === 'off_topic' || message.kind === 'not_found'"
+            [class.error]="message.kind === 'error'"
+          >
+            <p class="text">{{ message.text }}</p>
+            @if (message.sources?.length) {
+              <p class="sources">
+                From:
+                @for (source of message.sources; track source.article_id; let last = $last) {
+                  {{ source.title }}{{ last ? '' : ' · ' }}
+                }
+              </p>
+            }
+          </div>
+        </div>
+      }
+
+      @if (thinking()) {
+        <div class="row">
+          <div class="bubble thinking" aria-live="polite">Looking that up…</div>
+        </div>
+      }
+    </div>
+
+    <form class="composer" (ngSubmit)="send()">
+      <textarea
+        name="message"
+        rows="1"
+        maxlength="2000"
+        placeholder="Message Northwind Gear support"
+        aria-label="Your message"
+        [(ngModel)]="draftMessage"
+        (keydown.enter)="onEnter($event)"
+      ></textarea>
+      <button class="primary" type="submit" [disabled]="!draftMessage.trim() || thinking()">Send</button>
+    </form>
+    @if (messages().length > 0) {
+      <button class="link new-chat" type="button" [disabled]="thinking()" (click)="newChat()">Start a new chat</button>
+    }
+  </main>
+}
+
+<!-- ============================== ARTICLES ============================== -->
+@if (tab() === 'articles') {
+  <main class="layout">
+    <section class="panel">
+      <h2>Upload an article</h2>
+      <p class="hint">
+        Text files only ({{ acceptedExtensions }}), up to {{ maxContentChars }} characters. PDF, Word and Excel are
+        not supported: convert them to text first.
+      </p>
+      <input type="file" [accept]="acceptedExtensions" (change)="onFileSelected($event)" />
+
+      @if (uploadError()) {
+        <p class="banner bad">{{ uploadError() }}</p>
+      }
+      @if (uploadMessage()) {
+        <p class="banner ok">{{ uploadMessage() }}</p>
+      }
+
+      @if (draft; as d) {
+        <div class="draft">
+          <p class="label">Review before storing · {{ draftFileName() }}</p>
+          <label>
+            Title
+            <input type="text" name="draftTitle" maxlength="200" [(ngModel)]="d.title" />
+          </label>
+          <label>
+            Category <small>optional · lowercase, digits, hyphens</small>
+            <input type="text" name="draftCategory" maxlength="50" [(ngModel)]="d.category" />
+          </label>
+          <label>
+            Content <small>{{ d.content.length }} / {{ maxContentChars }} characters</small>
+            <textarea name="draftContent" rows="10" [(ngModel)]="d.content"></textarea>
+          </label>
+          @if (draftProblem) {
+            <p class="banner warn">{{ draftProblem }}</p>
+          }
+          <div class="actions">
+            <button class="primary" type="button" [disabled]="!!draftProblem || uploading()" (click)="saveDraft()">
+              {{ uploading() ? 'Storing…' : 'Store article' }}
+            </button>
+            <button type="button" (click)="cancelDraft()">Cancel</button>
+          </div>
+        </div>
+      }
+    </section>
+
+    <section class="panel">
+      <div class="panel-head">
+        <h2>Stored articles ({{ articles().length }})</h2>
+        <button class="link" type="button" (click)="loadArticles()">Refresh</button>
+      </div>
+      @if (articlesError()) {
+        <p class="banner bad">{{ articlesError() }}</p>
+      }
+      @if (articles().length === 0) {
+        <p class="empty">No articles yet. Upload one above.</p>
+      } @else {
+        <table>
+          <thead>
+            <tr>
+              <th>Title</th>
+              <th>Category</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (article of articles(); track article.id) {
+              <tr>
+                <td>{{ article.title }}</td>
+                <td>{{ article.category ?? '—' }}</td>
+                <td class="num">
+                  <button class="link danger" type="button" (click)="deleteArticle(article)">Delete</button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  </main>
+}
