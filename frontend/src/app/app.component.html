@@ -1,0 +1,244 @@
+<header class="topbar">
+  <div class="brand">
+    <h1>Support Search</h1>
+    <p>Rewrite → hybrid retrieval → rerank</p>
+  </div>
+  <div class="status">
+    @if (health(); as h) {
+      <span class="pill" [class.ok]="h.status === 'ok'" [class.warn]="h.status !== 'ok'">backend {{ h.status }}</span>
+      <span class="pill">{{ h.keyword_index_chunks }} chunks</span>
+      <span class="pill" [class.warn]="!h.reranker_loaded">reranker {{ h.reranker_loaded ? 'on' : 'off' }}</span>
+      <span class="pill" [class.warn]="h.rewrite_provider === 'none'">rewriter {{ h.rewrite_provider }}</span>
+    } @else {
+      <span class="pill bad">backend offline</span>
+    }
+    <button class="link" type="button" (click)="refreshHealth()">refresh</button>
+  </div>
+</header>
+
+@if (healthError()) {
+  <p class="banner bad">{{ healthError() }}</p>
+}
+
+<nav class="tabs">
+  <button type="button" [class.active]="tab() === 'search'" (click)="tab.set('search')">Search</button>
+  <button type="button" [class.active]="tab() === 'articles'" (click)="tab.set('articles')">
+    Articles ({{ articles().length }})
+  </button>
+</nav>
+
+<!-- ============================== SEARCH ============================== -->
+@if (tab() === 'search') {
+  <main class="layout">
+    <section class="panel">
+      <form (ngSubmit)="runSearch()">
+        <label for="question">Question</label>
+        <textarea
+          id="question"
+          name="question"
+          rows="2"
+          maxlength="2000"
+          placeholder="e.g. How long does shipping to Canada take?"
+          [(ngModel)]="question"
+          (keydown.control.enter)="runSearch()"
+        ></textarea>
+
+        <label for="history">
+          Conversation history <small>optional · one message per line, oldest first</small>
+        </label>
+        <textarea
+          id="history"
+          name="history"
+          rows="3"
+          placeholder="What's the warranty on your tents?&#10;Basecamp tents are covered for five years."
+          [(ngModel)]="historyText"
+        ></textarea>
+
+        <div class="switches">
+          <label>
+            Query mode
+            <select name="queryMode" [(ngModel)]="queryMode">
+              <option value="rewrite">rewrite (Claude)</option>
+              <option value="question_only">question only</option>
+              <option value="full_history">full history</option>
+            </select>
+          </label>
+          <label>
+            Retrieval
+            <select name="retrieval" [(ngModel)]="retrieval">
+              <option value="hybrid">hybrid (vector + BM25)</option>
+              <option value="vector">vector</option>
+              <option value="keyword">keyword (BM25)</option>
+            </select>
+          </label>
+          <label>
+            Results
+            <input type="number" name="topK" min="1" max="10" [(ngModel)]="topK" />
+          </label>
+          <label class="check"><input type="checkbox" name="rerank" [(ngModel)]="rerank" /> Rerank</label>
+          <label class="check"><input type="checkbox" name="debug" [(ngModel)]="includeDebug" /> Debug ranks</label>
+        </div>
+
+        @if (willCallRewriter) {
+          <p class="hint">
+            This request has history, so the question is rewritten by Claude. A new conversation uses one call from the
+            backend's call budget; repeated ones are served from its cache.
+          </p>
+        }
+
+        <div class="actions">
+          <button class="primary" type="submit" [disabled]="!question.trim() || searching()">
+            {{ searching() ? 'Searching…' : 'Search' }}
+          </button>
+          <span class="examples">
+            Try:
+            @for (example of examples; track example.label) {
+              <button class="chip" type="button" (click)="useExample(example)">{{ example.label }}</button>
+            }
+          </span>
+        </div>
+      </form>
+    </section>
+
+    @if (searchError()) {
+      <p class="banner bad">{{ searchError() }}</p>
+    }
+
+    @if (result(); as r) {
+      <section class="panel">
+        <div class="summary">
+          <div>
+            <span class="label">Searched for</span>
+            <strong>{{ r.search_query || '(nothing: no retrieval needed)' }}</strong>
+          </div>
+          <div class="pills">
+            <span class="pill">rewrite: {{ r.rewrite_source }}</span>
+            <span class="pill">score: {{ r.score_type }}</span>
+            <span class="pill">{{ searchMs() }} ms</span>
+            @if (r.rewrite_fallback) {
+              <span class="pill warn">rewrite fell back to the question</span>
+            }
+            @if (r.rerank_fallback) {
+              <span class="pill warn">rerank failed, fused order kept</span>
+            }
+          </div>
+        </div>
+
+        @if (!r.needs_retrieval) {
+          <p class="empty">Small talk detected: nothing to look up.</p>
+        } @else if (r.results.length === 0) {
+          <p class="empty">No matching articles.</p>
+        } @else {
+          <ol class="results">
+            @for (item of r.results; track item.article_id) {
+              <li>
+                <div class="result-head">
+                  <span class="title">{{ item.title }}</span>
+                  <span class="meta">
+                    {{ item.article_id }}
+                    @if (item.category) {
+                      · {{ item.category }}
+                    }
+                  </span>
+                  <span class="score">{{ item.score.toFixed(4) }}</span>
+                </div>
+                <p class="snippet">{{ item.snippet }}</p>
+                @if (item.debug; as d) {
+                  <p class="debug">
+                    vector rank {{ d.vector_rank ?? '—' }} · keyword rank {{ d.keyword_rank ?? '—' }} · RRF
+                    {{ d.rrf_score !== null ? d.rrf_score.toFixed(4) : '—' }} · rerank
+                    {{ d.rerank_score !== null ? d.rerank_score.toFixed(4) : '—' }}
+                  </p>
+                }
+              </li>
+            }
+          </ol>
+        }
+      </section>
+    }
+  </main>
+}
+
+<!-- ============================== ARTICLES ============================== -->
+@if (tab() === 'articles') {
+  <main class="layout">
+    <section class="panel">
+      <h2>Upload an article</h2>
+      <p class="hint">
+        Text files only ({{ acceptedExtensions }}), up to {{ maxContentChars }} characters. Markdown headings become
+        search chunks. PDF, Word and Excel are not supported: convert them to text first.
+      </p>
+      <input type="file" [accept]="acceptedExtensions" (change)="onFileSelected($event)" />
+
+      @if (uploadError()) {
+        <p class="banner bad">{{ uploadError() }}</p>
+      }
+      @if (uploadMessage()) {
+        <p class="banner ok">{{ uploadMessage() }}</p>
+      }
+
+      @if (draft; as d) {
+        <div class="draft">
+          <p class="label">Review before storing · {{ draftFileName() }}</p>
+          <label>
+            Title
+            <input type="text" name="draftTitle" maxlength="200" [(ngModel)]="d.title" />
+          </label>
+          <label>
+            Category <small>optional · lowercase, digits, hyphens</small>
+            <input type="text" name="draftCategory" maxlength="50" [(ngModel)]="d.category" />
+          </label>
+          <label>
+            Content <small>{{ d.content.length }} / {{ maxContentChars }} characters</small>
+            <textarea name="draftContent" rows="10" [(ngModel)]="d.content"></textarea>
+          </label>
+          @if (draftProblem) {
+            <p class="banner warn">{{ draftProblem }}</p>
+          }
+          <div class="actions">
+            <button class="primary" type="button" [disabled]="!!draftProblem || uploading()" (click)="saveDraft()">
+              {{ uploading() ? 'Storing…' : 'Store article' }}
+            </button>
+            <button type="button" (click)="cancelDraft()">Cancel</button>
+          </div>
+        </div>
+      }
+    </section>
+
+    <section class="panel">
+      <div class="summary">
+        <h2>Stored articles</h2>
+        <button class="link" type="button" (click)="loadArticles()">refresh</button>
+      </div>
+      @if (articlesError()) {
+        <p class="banner bad">{{ articlesError() }}</p>
+      }
+      @if (articles().length === 0) {
+        <p class="empty">No articles yet. Upload one above, or run the seed script on the backend.</p>
+      } @else {
+        <table>
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Title</th>
+              <th>Category</th>
+              <th class="num">Chunks</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (article of articles(); track article.id) {
+              <tr>
+                <td class="mono">{{ article.id }}</td>
+                <td>{{ article.title }}</td>
+                <td>{{ article.category ?? '—' }}</td>
+                <td class="num">{{ article.chunk_count }}</td>
+                <td class="num"><button class="link danger" type="button" (click)="deleteArticle(article)">delete</button></td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      }
+    </section>
+  </main>
+}

@@ -226,9 +226,22 @@ docker run --rm --env-file .env.uat -v sqt-chroma:/app/data/chroma -v sqt-hf:/ho
 
 The image is multi-stage, CPU-only, and runs as a non-root user. The vector index and the Hugging Face model cache live in volumes; `.env*` files are never copied into the image. `GET /health` reports `embedding_model_loaded`, `reranker_loaded`, `vector_store`, `keyword_index_chunks`, and `rewrite_provider`.
 
+## Frontend (Angular)
+
+`frontend/` holds a small Angular 17 app with a search screen (all switches, debug ranks) and an articles screen (upload a `.md` / `.txt` file, list, delete). With the backend running on port 8000:
+
+```powershell
+cd frontend
+npm install     # first time only
+npm start       # http://localhost:4200, proxies /api and /health to the backend
+```
+
+Details are in [`frontend/README.md`](frontend/README.md).
+
 ## Project layout
 
 ```
+frontend/                        Angular app (search + article upload), dev proxy to the API
 src/
   main.py, api_router.py         app creation, central /api/v1 router
   core/                          DI providers, lifespan, exceptions + ONE handler, middleware, envelope
