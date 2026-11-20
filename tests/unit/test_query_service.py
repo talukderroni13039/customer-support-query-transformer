@@ -105,3 +105,32 @@ async def test_cache_hits_are_reported_as_cache() -> None:
 
     plan = await QueryService(CachedFake()).build_query(QUESTION, HISTORY, QueryMode.REWRITE)
     assert plan.rewrite_source == "cache"
+
+
+# --- speaker roles -------------------------------------------------------------------------
+
+
+async def test_roles_are_labelled_for_the_rewriter_and_plain_strings_stay_plain() -> None:
+    from src.domains.support_search.schemas import HistoryMessage
+
+    rewriter = FakeRewriter()
+    history = [
+        HistoryMessage(role="customer", text="Do you sell jackets?"),
+        HistoryMessage(role="agent", text="Yes, the Trailblazer Pro."),
+        "a message with no known speaker",
+        HistoryMessage(role="customer", text="   "),  # blank: dropped
+    ]
+    service = QueryService(rewriter)
+    await service.build_query(QUESTION, history, QueryMode.REWRITE)
+    assert rewriter.calls[0][1] == [
+        "Customer: Do you sell jackets?",
+        "Agent: Yes, the Trailblazer Pro.",
+        "a message with no known speaker",
+    ]
+    # The full_history baseline is a search query: no speaker labels in it.
+    full = await service.build_query(QUESTION, history, QueryMode.FULL_HISTORY)
+    assert full.search_query.splitlines()[:2] == [
+        "Do you sell jackets?",
+        "Yes, the Trailblazer Pro.",
+    ]
+    assert "Customer:" not in full.search_query

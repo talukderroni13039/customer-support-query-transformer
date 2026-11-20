@@ -166,11 +166,17 @@ class FakeAnswerGenerator:
         self.citations = citations
         self.error = error
         self.calls: list[tuple[str, list[str], list[ContextChunk]]] = []
+        self.resolved_questions: list[str] = []
 
     async def answer(
-        self, question: str, history: list[str], chunks: list[ContextChunk]
+        self,
+        question: str,
+        history: list[str],
+        chunks: list[ContextChunk],
+        resolved_question: str = "",
     ) -> GeneratedAnswer:
         self.calls.append((question, list(history), list(chunks)))
+        self.resolved_questions.append(resolved_question)
         if self.error is not None:
             raise self.error
         if self.kind is not AnswerKind.ANSWER:

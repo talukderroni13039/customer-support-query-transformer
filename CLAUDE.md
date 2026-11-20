@@ -80,6 +80,7 @@ Create `src/domains/<name>/{routers,schemas,services,prompts,chunking}/` (only t
 
 - Default `uv run pytest` uses `FakeRewriter`, `FakeEmbedder`, `FakeReranker`, Chroma `EphemeralClient()`, and the real `BM25Index`. Zero API calls, zero model downloads.
 - `@pytest.mark.model` (real models) and `@pytest.mark.live` (real Claude, max 5 cases, `max_retries=1`) are excluded by default and run once.
+- Eval sets in `data/eval/`: `conversations.json` (main, tuned on), `holdout.json` (never tune on it), `negatives.json`, `attacks.json`. Never copy an eval sentence into a prompt (`test_prompts_do_not_quote_eval_cases` enforces it). After changing a prompt, retrieval, or the grounding check, run `scripts.evaluate_chat --in-process` and confirm no previously correct answer broke.
 - Hard cap on real Anthropic calls (`LLM_CALL_BUDGET`, default 500; it was 50 for the original build), enforced by `LlmCallBudget` (`data/cache/llm_call_budget.json`). Never debug with live calls. Never delete `data/cache/`.
 - Coverage threshold: 80% on `src/` (enforced in `pyproject.toml`).
 

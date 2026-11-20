@@ -42,20 +42,27 @@ class CachedAnswerGenerator:
             return {}
         return data if isinstance(data, dict) else {}
 
-    def _key(self, question: str, history: list[str], chunks: list[ContextChunk]) -> str:
+    def _key(
+        self, question: str, history: list[str], chunks: list[ContextChunk], resolved: str
+    ) -> str:
         return stable_hash(
             {
                 "ns": self._namespace,
                 "question": question,
                 "history": history,
+                "resolved": resolved,
                 "chunks": [[c.label, c.chunk_id, stable_hash(c.text)] for c in chunks],
             }
         )
 
     async def answer(
-        self, question: str, history: list[str], chunks: list[ContextChunk]
+        self,
+        question: str,
+        history: list[str],
+        chunks: list[ContextChunk],
+        resolved_question: str = "",
     ) -> GeneratedAnswer:
-        key = self._key(question, history, chunks)
+        key = self._key(question, history, chunks, resolved_question)
         entry = self._entries.get(key)
         if entry is not None:
             try:
@@ -67,7 +74,7 @@ class CachedAnswerGenerator:
                 )
             except (KeyError, ValueError):
                 logger.warning("ignoring an unreadable answer cache entry")
-        result = await self._inner.answer(question, history, chunks)
+        result = await self._inner.answer(question, history, chunks, resolved_question)
         self._entries[key] = {
             "kind": result.kind.value,
             "answer": result.answer,

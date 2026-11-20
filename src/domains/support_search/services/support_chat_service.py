@@ -96,7 +96,7 @@ class SupportChatService:
             result.kind, result.answer = AnswerKind.SMALL_TALK, SMALL_TALK_MESSAGE
         else:
             chunks, candidates = await self._relevant_chunks(plan.search_query)
-            await self._write_answer(request, chunks, result)
+            await self._write_answer(request, chunks, result, plan.search_query)
 
         logger.info(
             "chat completed",
@@ -145,14 +145,21 @@ class SupportChatService:
         return kept, len(outcome.chunks)
 
     async def _write_answer(
-        self, request: ChatRequest, chunks: list[ContextChunk], result: ChatResult
+        self,
+        request: ChatRequest,
+        chunks: list[ContextChunk],
+        result: ChatResult,
+        resolved_question: str,
     ) -> None:
         if self._answerer is None:
             self._fallback(chunks, result)
             return
         try:
             generated = await self._answerer.answer(
-                request.question, self._query.recent_history(request.history), chunks
+                request.question,
+                self._query.recent_history(request.history),
+                chunks,
+                resolved_question,
             )
         except LLMOutputInvalidError:
             # The answer failed the grounding check twice: never show an unverified answer.

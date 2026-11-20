@@ -358,3 +358,27 @@ async def test_reranked_results_below_min_score_are_dropped(spies: tuple[Spy, Sp
     assert all(c.hit.score >= 0.01 for c in relevant.chunks)
     # The threshold only applies to rerank scores, never to cosine / BM25 / RRF scores.
     assert len((await strict.retrieve(off_topic, RetrievalMode.VECTOR, rerank=False)).chunks) == 4
+
+
+def _retrieved(chunk_id: str, vector_rank: int | None, keyword_rank: int | None) -> RankedChunk:
+    article_id = chunk_id.split("::")[0]
+    return RankedChunk(
+        hit=ChunkHit(chunk_id=chunk_id, article_id=article_id, title="t", text="x", score=1.0),
+        vector_rank=vector_rank,
+        keyword_rank=keyword_rank,
+    )
+
+
+def test_rerank_pool_always_includes_each_retrievers_top_hits() -> None:
+    """Fusion can push the best vector hit outside the pool when keyword search missed it."""
+    fused = [_retrieved(f"a{i}::0", 10 + i, 10 + i) for i in range(6)]  # mediocre in both lists
+    fused.append(_retrieved("best-vector::0", 1, None))  # fused rank 7
+    fused.append(_retrieved("best-keyword::0", None, 1))  # fused rank 8
+    ids = [c.hit.chunk_id for c in select_rerank_pool(fused, 4, min_articles=1)]
+    assert "best-vector::0" in ids
+    assert "best-keyword::0" in ids
+    assert len(ids) == 4
+    assert ids == [c.hit.chunk_id for c in fused if c.hit.chunk_id in ids]  # fused order kept
+    # When the top hits are already in the head, the pool is the plain top-N.
+    plain = [_retrieved("x::0", 1, 1), _retrieved("y::0", 2, 2), _retrieved("z::0", 3, 3)]
+    assert select_rerank_pool(plain, 2, min_articles=1) == plain[:2]

@@ -17,6 +17,7 @@ from src.domains.support_search.schemas.chat_schemas import (
 )
 from src.domains.support_search.schemas.rewrite_schemas import RewrittenQuery
 from src.domains.support_search.schemas.search_schemas import (
+    HistoryMessage,
     QueryMode,
     RetrievalMode,
     RetrievedArticle,
@@ -40,6 +41,7 @@ __all__ = [
     "Citation",
     "ContextChunk",
     "GeneratedAnswer",
+    "HistoryMessage",
     "QueryMode",
     "RetrievalMode",
     "RetrievedArticle",

@@ -7,7 +7,14 @@
       "Do you sell the Trailblazer jacket in waterproof?",
       "Yes, the Trailblazer Pro (TB-PRO-22) is fully waterproof."
     ],
-    "expected_article_ids": ["KB-012"]
+    "expected_article_ids": [
+      "KB-012"
+    ],
+    "expected_facts": [
+      [
+        "60"
+      ]
+    ]
   },
   {
     "id": "C-002",
@@ -17,7 +24,17 @@
       "I'm looking at the Basecamp 4 tent.",
       "The Basecamp 4 (BC-400) sleeps four and weighs 4.1 kg."
     ],
-    "expected_article_ids": ["KB-041"]
+    "expected_article_ids": [
+      "KB-041"
+    ],
+    "expected_facts": [
+      [
+        "5-year",
+        "5 year",
+        "five-year",
+        "five year"
+      ]
+    ]
   },
   {
     "id": "C-003",
@@ -27,7 +44,14 @@
       "I bought the Cascade Hiker boots last week.",
       "Great choice, the Cascade Hiker (CH-310) is our most popular boot."
     ],
-    "expected_article_ids": ["KB-025"]
+    "expected_article_ids": [
+      "KB-025"
+    ],
+    "expected_facts": [
+      [
+        "exchange"
+      ]
+    ]
   },
   {
     "id": "C-004",
@@ -37,7 +61,18 @@
       "Do you have gift cards?",
       "Yes, we offer digital gift cards from $25 to $500."
     ],
-    "expected_article_ids": ["KB-061"]
+    "expected_article_ids": [
+      "KB-061"
+    ],
+    "expected_facts": [
+      [
+        "never expire",
+        "do not expire",
+        "don't expire",
+        "not expire",
+        "no expiry"
+      ]
+    ]
   },
   {
     "id": "C-005",
@@ -47,7 +82,14 @@
       "I want to order the Ridgeline 65 pack.",
       "The Ridgeline 65 (RL-65) is in stock in all three torso sizes."
     ],
-    "expected_article_ids": ["KB-052"]
+    "expected_article_ids": [
+      "KB-052"
+    ],
+    "expected_facts": [
+      [
+        "torso"
+      ]
+    ]
   },
   {
     "id": "C-006",
@@ -57,7 +99,14 @@
       "How long does shipping take to the United States?",
       "Standard shipping within the US takes 3 to 5 business days."
     ],
-    "expected_article_ids": ["KB-031"]
+    "expected_article_ids": [
+      "KB-031"
+    ],
+    "expected_facts": [
+      [
+        "6 to 10"
+      ]
+    ]
   },
   {
     "id": "C-007",
@@ -67,7 +116,14 @@
       "What's the return window for footwear?",
       "Footwear can be returned within 30 days if it is unworn outdoors."
     ],
-    "expected_article_ids": ["KB-013"]
+    "expected_article_ids": [
+      "KB-013"
+    ],
+    "expected_facts": [
+      [
+        "14"
+      ]
+    ]
   },
   {
     "id": "C-008",
@@ -77,7 +133,17 @@
       "What's the warranty on backpacks?",
       "Ridgeline backpacks carry a lifetime warranty."
     ],
-    "expected_article_ids": ["KB-041"]
+    "expected_article_ids": [
+      "KB-041"
+    ],
+    "expected_facts": [
+      [
+        "5-year",
+        "5 year",
+        "five-year",
+        "five year"
+      ]
+    ]
   },
   {
     "id": "C-009",
@@ -87,7 +153,14 @@
       "Do you ship to the UK?",
       "Yes, UK delivery takes 7 to 12 business days."
     ],
-    "expected_article_ids": ["KB-033"]
+    "expected_article_ids": [
+      "KB-033"
+    ],
+    "expected_facts": [
+      [
+        "10 to 14"
+      ]
+    ]
   },
   {
     "id": "C-010",
@@ -97,7 +170,14 @@
       "What's the warranty on your tents?",
       "Basecamp tents are covered for five years."
     ],
-    "expected_article_ids": ["KB-042"]
+    "expected_article_ids": [
+      "KB-042"
+    ],
+    "expected_facts": [
+      [
+        "lifetime"
+      ]
+    ]
   },
   {
     "id": "C-011",
@@ -107,7 +187,14 @@
       "How long do I have to return boots?",
       "Footwear can be returned within 30 days."
     ],
-    "expected_article_ids": ["KB-012"]
+    "expected_article_ids": [
+      "KB-012"
+    ],
+    "expected_facts": [
+      [
+        "60"
+      ]
+    ]
   },
   {
     "id": "C-012",
@@ -117,7 +204,14 @@
       "How long does delivery to Canada take?",
       "Standard shipping to Canada takes 6 to 10 business days."
     ],
-    "expected_article_ids": ["KB-032"]
+    "expected_article_ids": [
+      "KB-032"
+    ],
+    "expected_facts": [
+      [
+        "7 to 12"
+      ]
+    ]
   },
   {
     "id": "C-013",
@@ -127,7 +221,14 @@
       "How do I work out what size boots I need?",
       "Measure your foot in hiking socks; our boots run true to size."
     ],
-    "expected_article_ids": ["KB-050"]
+    "expected_article_ids": [
+      "KB-050"
+    ],
+    "expected_facts": [
+      [
+        "chest"
+      ]
+    ]
   },
   {
     "id": "C-014",
@@ -137,7 +238,15 @@
       "I'm deciding between the Basecamp 2 tent and the Ridgeline 45 backpack as a gift.",
       "Both are popular choices: the Basecamp 2 (BC-200) and the Ridgeline 45 (RL-45)."
     ],
-    "expected_article_ids": ["KB-041", "KB-042"]
+    "expected_article_ids": [
+      "KB-041",
+      "KB-042"
+    ],
+    "expected_facts": [
+      [
+        "lifetime"
+      ]
+    ]
   },
   {
     "id": "C-015",
@@ -149,7 +258,15 @@
       "Is there an insulated one too?",
       "Yes, the Summit Shell Insulated (SS-111)."
     ],
-    "expected_article_ids": ["KB-104", "KB-103"]
+    "expected_article_ids": [
+      "KB-104",
+      "KB-103"
+    ],
+    "expected_facts": [
+      [
+        "insulat"
+      ]
+    ]
   },
   {
     "id": "C-016",
@@ -161,7 +278,17 @@
       "Do you offer installment plans?",
       "Yes, orders over $100 can be paid in installments."
     ],
-    "expected_article_ids": ["KB-062"]
+    "expected_article_ids": [
+      "KB-062"
+    ],
+    "expected_facts": [
+      [
+        "cannot",
+        "can't",
+        "can not",
+        "not be combined"
+      ]
+    ]
   },
   {
     "id": "C-017",
@@ -171,35 +298,79 @@
       "Do you deliver to Canada and Australia?",
       "Yes, we ship to both countries."
     ],
-    "expected_article_ids": ["KB-031", "KB-033"]
+    "expected_article_ids": [
+      "KB-031",
+      "KB-033"
+    ],
+    "expected_facts": [
+      [
+        "15"
+      ],
+      [
+        "30"
+      ]
+    ]
   },
   {
     "id": "C-018",
     "pattern": "exact_code",
     "question": "Is TB-PRO-23 machine washable?",
     "history": [],
-    "expected_article_ids": ["KB-102"]
+    "expected_article_ids": [
+      "KB-102"
+    ],
+    "expected_facts": [
+      [
+        "hand wash"
+      ]
+    ]
   },
   {
     "id": "C-019",
     "pattern": "exact_code",
     "question": "What is the waterproof rating of SS-111?",
     "history": [],
-    "expected_article_ids": ["KB-104"]
+    "expected_article_ids": [
+      "KB-104"
+    ],
+    "expected_facts": [
+      [
+        "20,000",
+        "20000"
+      ]
+    ]
   },
   {
     "id": "C-020",
     "pattern": "exact_code",
     "question": "How much does the BC-200 weigh?",
     "history": [],
-    "expected_article_ids": ["KB-107"]
+    "expected_article_ids": [
+      "KB-107"
+    ],
+    "expected_facts": [
+      [
+        "1.9"
+      ]
+    ]
   },
   {
     "id": "C-021",
     "pattern": "exact_code",
     "question": "Can I take the RL-65 as carry-on?",
     "history": [],
-    "expected_article_ids": ["KB-106"]
+    "expected_article_ids": [
+      "KB-106"
+    ],
+    "expected_facts": [
+      [
+        "too large",
+        "checked",
+        "cannot",
+        "can't",
+        "not carry-on"
+      ]
+    ]
   },
   {
     "id": "C-022",
@@ -209,56 +380,120 @@
       "I'm comparing a few of your jackets.",
       "Happy to help. Which models are you looking at?"
     ],
-    "expected_article_ids": ["KB-101"]
+    "expected_article_ids": [
+      "KB-101"
+    ],
+    "expected_facts": [
+      [
+        "pit zips"
+      ]
+    ]
   },
   {
     "id": "C-023",
     "pattern": "paraphrase",
     "question": "Can I send back something I bought cheap in a sale?",
     "history": [],
-    "expected_article_ids": ["KB-013"]
+    "expected_article_ids": [
+      "KB-013"
+    ],
+    "expected_facts": [
+      [
+        "14"
+      ]
+    ]
   },
   {
     "id": "C-024",
     "pattern": "paraphrase",
     "question": "I sent my parcel back ages ago and the money still hasn't shown up on my card.",
     "history": [],
-    "expected_article_ids": ["KB-020"]
+    "expected_article_ids": [
+      "KB-020"
+    ],
+    "expected_facts": [
+      [
+        "5 to 7",
+        "10 business days"
+      ]
+    ]
   },
   {
     "id": "C-025",
     "pattern": "paraphrase",
     "question": "I can't remember my login details.",
     "history": [],
-    "expected_article_ids": ["KB-070"]
+    "expected_article_ids": [
+      "KB-070"
+    ],
+    "expected_facts": [
+      [
+        "forgot password",
+        "reset"
+      ]
+    ]
   },
   {
     "id": "C-026",
     "pattern": "paraphrase",
     "question": "The zip on my rucksack broke after three years. Will you fix it?",
     "history": [],
-    "expected_article_ids": ["KB-042"]
+    "expected_article_ids": [
+      "KB-042"
+    ],
+    "expected_facts": [
+      [
+        "lifetime",
+        "repaired",
+        "replaced"
+      ]
+    ]
   },
   {
     "id": "C-027",
     "pattern": "already_standalone",
     "question": "What is your refund policy for sale items?",
     "history": [],
-    "expected_article_ids": ["KB-021"]
+    "expected_article_ids": [
+      "KB-021"
+    ],
+    "expected_facts": [
+      [
+        "store credit"
+      ]
+    ]
   },
   {
     "id": "C-028",
     "pattern": "already_standalone",
     "question": "How do I file a warranty claim?",
     "history": [],
-    "expected_article_ids": ["KB-044"]
+    "expected_article_ids": [
+      "KB-044"
+    ],
+    "expected_facts": [
+      [
+        "order number",
+        "photos"
+      ]
+    ]
   },
   {
     "id": "C-029",
     "pattern": "already_standalone",
     "question": "Which payment methods do you accept?",
     "history": [],
-    "expected_article_ids": ["KB-060"]
+    "expected_article_ids": [
+      "KB-060"
+    ],
+    "expected_facts": [
+      [
+        "visa"
+      ],
+      [
+        "paypal"
+      ]
+    ]
   },
   {
     "id": "C-030",
@@ -268,7 +503,16 @@
       "Hi there",
       "Hello! How can I help you today?"
     ],
-    "expected_article_ids": ["KB-065"]
+    "expected_article_ids": [
+      "KB-065"
+    ],
+    "expected_facts": [
+      [
+        "1 hour",
+        "one hour",
+        "an hour"
+      ]
+    ]
   },
   {
     "id": "C-031",

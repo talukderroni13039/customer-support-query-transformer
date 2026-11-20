@@ -8,6 +8,7 @@ import {
   ArticleSummary,
   ChatCitation,
   ChatSource,
+  HistoryMessage,
   describeError,
 } from './api.service';
 import { ACCEPTED_EXTENSIONS, MAX_CONTENT_CHARS, hasAcceptedExtension, parseArticleFile } from './article-file';
@@ -101,9 +102,12 @@ export class AppComponent implements OnInit, AfterViewChecked {
     if (!question || this.thinking()) return;
 
     // The conversation so far goes with every request: the backend stores nothing.
-    const history = this.messages()
+    const history: HistoryMessage[] = this.messages()
       .filter((message) => message.kind !== 'error')
-      .map((message) => message.text.slice(0, MAX_MESSAGE_CHARS))
+      .map((message) => ({
+        role: message.role === 'user' ? ('customer' as const) : ('agent' as const),
+        text: message.text.slice(0, MAX_MESSAGE_CHARS),
+      }))
       .slice(-MAX_HISTORY_ITEMS);
 
     this.messages.update((list) => [...list, { role: 'user', text: question }]);

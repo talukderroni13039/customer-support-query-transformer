@@ -23,6 +23,8 @@ DEFAULT_RERANK_CANDIDATES = 10
 DEFAULT_RERANK_MIN_SCORE = 0.0
 # Upper bound when the candidate window is widened to reach `min_articles` distinct articles.
 MAX_CANDIDATES_PER_RETRIEVER = 320
+# Each retriever's top hits are always shown to the reranker (see select_rerank_pool).
+RERANK_POOL_RETRIEVER_TOP = 3
 
 
 @dataclass(frozen=True)
@@ -48,24 +50,51 @@ def distinct_articles(chunks: list[RankedChunk]) -> int:
 
 
 def select_rerank_pool(
-    chunks: list[RankedChunk], pool_size: int, min_articles: int
+    chunks: list[RankedChunk],
+    pool_size: int,
+    min_articles: int,
+    retriever_top: int = RERANK_POOL_RETRIEVER_TOP,
 ) -> list[RankedChunk]:
     """Pick at most `pool_size` chunks to rerank, keeping the ranked order.
 
-    Normally this is simply the top `pool_size` chunks. When those cover fewer than
-    `min_articles` articles (one long article can fill the whole window), trailing duplicates
-    are swapped for the best chunk of the next unseen articles, so reranking can still return
-    `min_articles` articles. The pool never grows beyond `pool_size`.
+    Normally this is simply the top `pool_size` chunks. Two things can change it:
+
+    - A chunk that one retriever ranked in its top `retriever_top` is always included. Rank
+      fusion favours chunks that both retrievers found, so the best vector hit can land just
+      outside the pool when keyword search missed it (or the other way round); the reranker is
+      the judge, so it must at least see each retriever's best candidates.
+    - When the pool covers fewer than `min_articles` articles (one long article can fill the
+      whole window), duplicates are swapped for the best chunk of the next unseen articles.
+
+    The pool never grows beyond `pool_size`.
     """
     head = chunks[:pool_size]
     target = min(min_articles, pool_size, distinct_articles(chunks))
-    if distinct_articles(head) >= target:
+
+    def is_retriever_top(chunk: RankedChunk) -> bool:
+        return any(
+            rank is not None and rank <= retriever_top
+            for rank in (chunk.vector_rank, chunk.keyword_rank)
+        )
+
+    head_ids = {chunk.hit.chunk_id for chunk in head}
+    must = [c for c in chunks if is_retriever_top(c)][:pool_size]
+    if distinct_articles(head) >= target and all(c.hit.chunk_id in head_ids for c in must):
         return head
 
-    chosen: dict[str, RankedChunk] = {}  # chunk_id → chunk; first the best chunk per article
+    chosen: dict[str, RankedChunk] = {}
     seen_articles: set[str] = set()
-    for chunk in chunks:
-        if len(seen_articles) == target:
+    for chunk in must:
+        slots_left = pool_size - len(chosen)
+        if slots_left <= 0:
+            break
+        still_needed = max(target - len(seen_articles), 0)
+        # A retriever-top chunk is taken unless it would crowd out an article still needed.
+        if chunk.hit.article_id not in seen_articles or slots_left - 1 >= still_needed:
+            chosen[chunk.hit.chunk_id] = chunk
+            seen_articles.add(chunk.hit.article_id)
+    for chunk in chunks:  # then the best chunk of further articles, up to the target
+        if len(seen_articles) >= target or len(chosen) == pool_size:
             break
         if chunk.hit.article_id not in seen_articles:
             seen_articles.add(chunk.hit.article_id)

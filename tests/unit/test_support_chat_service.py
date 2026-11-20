@@ -84,7 +84,7 @@ async def test_answer_comes_from_labelled_chunks_with_citations(seeded: AppResou
     assert history == []
     assert [c.label for c in chunks] == [f"C{i}" for i in range(1, len(chunks) + 1)]
     assert chunks[0].article_id == "KB-012"
-    assert chunks[0].source == "Returns for Outerwear > Return window"
+    assert chunks[0].source == "Returns for Outerwear / Return window"
     assert len(chunks) <= 5
 
 

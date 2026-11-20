@@ -1,15 +1,35 @@
 """Query stage: question + history → the search query, per `query_mode`."""
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from src.core.exceptions import AppError, LLMError
-from src.domains.support_search.schemas.search_schemas import QueryMode
+from src.domains.support_search.schemas.search_schemas import (
+    HistoryItem,
+    HistoryMessage,
+    QueryMode,
+)
 from src.llm.base import QueryRewriter
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_HISTORY_MESSAGES = 12
+
+_ROLE_LABELS = {"customer": "Customer", "agent": "Agent"}
+
+
+def history_text(item: HistoryItem) -> str:
+    """The words of a history item, without the speaker."""
+    return (item.text if isinstance(item, HistoryMessage) else item).strip()
+
+
+def render_history_item(item: HistoryItem) -> str:
+    """A history item as shown to the LLM: `Customer: ...` / `Agent: ...` when the role is known."""
+    text = history_text(item)
+    if isinstance(item, HistoryMessage):
+        return f"{_ROLE_LABELS[item.role]}: {text}"
+    return text
 
 
 @dataclass(frozen=True)
@@ -32,18 +52,27 @@ class QueryService:
         self._max_history = max_history_messages
         self._strict = strict
 
-    def recent_history(self, history: list[str]) -> list[str]:
+    def _recent(self, history: Sequence[HistoryItem]) -> list[HistoryItem]:
         """Drop blank items, then keep only the last `max_history_messages`."""
-        cleaned = [item.strip() for item in history if item.strip()]
-        return cleaned[-self._max_history :] if self._max_history > 0 else []
+        kept = [item for item in history if history_text(item)]
+        return kept[-self._max_history :] if self._max_history > 0 else []
 
-    async def build_query(self, question: str, history: list[str], mode: QueryMode) -> QueryPlan:
+    def recent_history(self, history: Sequence[HistoryItem]) -> list[str]:
+        """The recent history as lines for an LLM prompt, with speaker labels where known."""
+        return [render_history_item(item) for item in self._recent(history)]
+
+    async def build_query(
+        self, question: str, history: Sequence[HistoryItem], mode: QueryMode
+    ) -> QueryPlan:
         if mode is QueryMode.QUESTION_ONLY:
             return QueryPlan(search_query=question)
 
-        recent = self.recent_history(history)
         if mode is QueryMode.FULL_HISTORY:
-            return QueryPlan(search_query="\n".join([*recent, question]))
+            # A search query, not a prompt: speaker labels would only add noise.
+            texts = [history_text(item) for item in self._recent(history)]
+            return QueryPlan(search_query="\n".join([*texts, question]))
+
+        recent = self.recent_history(history)
 
         # QueryMode.REWRITE
         if not recent:

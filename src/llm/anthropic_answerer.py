@@ -59,18 +59,24 @@ class AnthropicAnswerGenerator:
         )
 
     async def answer(
-        self, question: str, history: list[str], chunks: list[ContextChunk]
+        self,
+        question: str,
+        history: list[str],
+        chunks: list[ContextChunk],
+        resolved_question: str = "",
     ) -> GeneratedAnswer:
         started = time.perf_counter()
         result = await self._client.structured(
             GeneratedAnswer,
             system=ANSWER_SYSTEM_PROMPT,
-            user_message=build_answer_user_message(question, history, chunks),
+            user_message=build_answer_user_message(question, history, chunks, resolved_question),
             max_tokens=self._max_tokens,
             operation="answer",
             context={
                 "chunks": {c.label: c.checkable_text for c in chunks},
-                "customer_text": " ".join([*history, question]),
+                "question_text": question,
+                "history_text": " ".join(history),
+                "titles_text": " ".join(c.title for c in chunks),
             },
         )
         logger.info(

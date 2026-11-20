@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, StrictInt, StringConstraints
 
@@ -9,7 +9,20 @@ MAX_HISTORY_ITEMS = 100
 Question = Annotated[
     str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_TEXT_CHARS)
 ]
-HistoryItem = Annotated[str, StringConstraints(max_length=MAX_TEXT_CHARS)]
+HistoryText = Annotated[str, StringConstraints(max_length=MAX_TEXT_CHARS)]
+
+
+class HistoryMessage(BaseModel):
+    """An earlier message with its speaker, so the model does not have to guess who said it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["customer", "agent"]
+    text: HistoryText
+
+
+# Plain strings stay valid (speaker unknown); {role, text} is preferred when the caller knows.
+HistoryItem = HistoryText | HistoryMessage
 
 
 class QueryMode(StrEnum):
@@ -54,7 +67,10 @@ class SearchRequest(BaseModel):
     history: list[HistoryItem] = Field(
         default_factory=list,
         max_length=MAX_HISTORY_ITEMS,
-        description="Earlier messages as plain strings, oldest first. Only the last 12 are used.",
+        description=(
+            "Earlier messages, oldest first: plain strings, or {role, text} with role "
+            "'customer' or 'agent'. Only the last 12 are used."
+        ),
     )
     # Strict types: "3", "yes", or 1 are rejected instead of being silently coerced.
     top_k: StrictInt | None = Field(

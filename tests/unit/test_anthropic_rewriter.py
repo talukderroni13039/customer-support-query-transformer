@@ -98,8 +98,8 @@ async def test_request_shape_sent_to_anthropic(tmp_path: Path) -> None:
     assert len(body["messages"]) == 1
     assert body["messages"][0]["role"] == "user"
     user_text = str(body["messages"][0]["content"])
-    assert "1. Do you sell the Trailblazer jacket?" in user_text
-    assert "2. Yes, the Trailblazer Pro (TB-PRO-22)." in user_text
+    assert "- Do you sell the Trailblazer jacket?" in user_text
+    assert "- Yes, the Trailblazer Pro (TB-PRO-22)." in user_text
     assert QUESTION in user_text
     properties = body["tools"][0]["input_schema"]["properties"]
     assert set(properties) == {"needs_retrieval", "standalone_query"}  # from_cache is hidden

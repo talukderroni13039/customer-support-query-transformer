@@ -10,5 +10,9 @@ class QueryRewriter(Protocol):
 
 class AnswerGenerator(Protocol):
     async def answer(
-        self, question: str, history: list[str], chunks: list[ContextChunk]
+        self,
+        question: str,
+        history: list[str],
+        chunks: list[ContextChunk],
+        resolved_question: str = "",
     ) -> GeneratedAnswer: ...

@@ -29,10 +29,27 @@ def test_stop_words_removed() -> None:
 
 
 def test_hyphenated_word_without_digits_matches_unhyphenated_spelling() -> None:
-    assert tokenize("water-resistant") == tokenize("water resistant") == ["water", "resistant"]
+    assert tokenize("water-resistant") == tokenize("water resistant") == ["water", "resist"]
 
 
 def test_same_output_for_chunks_and_queries() -> None:
     chunk_text = "Trailblazer Pro — Care: The TB-PRO-22 is machine washable."
     query = "trailblazer pro care the tb-pro-22 is machine washable"
     assert tokenize(chunk_text) == tokenize(query)
+
+
+def test_words_are_stemmed_so_singular_matches_plural_and_tenses() -> None:
+    assert tokenize("jackets") == tokenize("jacket") == ["jacket"]
+    assert tokenize("returned") == tokenize("returns") == tokenize("return") == ["return"]
+    assert tokenize("shipping") == tokenize("ship")
+    assert tokenize("How long do I have to return a jacket") == ["long", "return", "jacket"]
+
+
+def test_anything_with_a_digit_is_never_stemmed() -> None:
+    assert tokenize("TB-PRO-22 SS-110 20000mm 60-day size9s") == [
+        "tb-pro-22",
+        "ss-110",
+        "20000mm",
+        "60-day",
+        "size9s",
+    ]

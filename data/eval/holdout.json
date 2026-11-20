@@ -1,0 +1,124 @@
+[
+  {
+    "id": "H-001",
+    "pattern": "pronoun",
+    "question": "Are they waterproof?",
+    "history": [
+      "I'm interested in the Cascade Trail Runner shoes.",
+      "The Cascade Trail Runner (CH-315) is our lightweight trail shoe."
+    ],
+    "expected_article_ids": ["KB-110"],
+    "expected_facts": [["not waterproof", "non-waterproof", "isn't waterproof", "without a membrane", "no membrane"]]
+  },
+  {
+    "id": "H-002",
+    "pattern": "ellipsis",
+    "question": "And the EU?",
+    "history": [
+      "How much is shipping to the UK?",
+      "Shipping to the UK costs a flat $20."
+    ],
+    "expected_article_ids": ["KB-034"],
+    "expected_facts": [["22"]]
+  },
+  {
+    "id": "H-003",
+    "pattern": "correction",
+    "question": "Sorry, I was actually asking how to join the rewards program, not about my password.",
+    "history": [
+      "How do I change my password?",
+      "Select Forgot password on the sign-in page and follow the link we email you."
+    ],
+    "expected_article_ids": ["KB-071"],
+    "expected_facts": [["free"]]
+  },
+  {
+    "id": "H-004",
+    "pattern": "multi_reference",
+    "question": "Which one of them is allowed as carry-on?",
+    "history": [
+      "I'm comparing the Ridgeline 45 and the Ridgeline 65 packs.",
+      "Both are popular: the Ridgeline 45 holds 45 litres and the Ridgeline 65 holds 65 litres."
+    ],
+    "expected_article_ids": ["KB-105", "KB-106"],
+    "expected_facts": [["45"]]
+  },
+  {
+    "id": "H-005",
+    "pattern": "exact_code",
+    "question": "How heavy is the CH-310?",
+    "history": [],
+    "expected_article_ids": ["KB-109"],
+    "expected_facts": [["620"]]
+  },
+  {
+    "id": "H-006",
+    "pattern": "paraphrase",
+    "question": "The tracking page for my package hasn't changed in a week. What should I do?",
+    "history": [],
+    "expected_article_ids": ["KB-035"],
+    "expected_facts": [["trace", "contact support"]]
+  },
+  {
+    "id": "H-007",
+    "pattern": "already_standalone",
+    "question": "Can I split my payment into installments?",
+    "history": [],
+    "expected_article_ids": ["KB-062"],
+    "expected_facts": [["100"], ["four", "4 "]]
+  },
+  {
+    "id": "H-008",
+    "pattern": "pronoun",
+    "question": "Is it machine washable?",
+    "history": [
+      "Tell me about the Ridgeline 65 backpack.",
+      "The Ridgeline 65 (RL-65) is a 65-litre pack for multi-day trekking."
+    ],
+    "expected_article_ids": ["KB-106"],
+    "expected_facts": [["do not machine wash", "not machine wash", "don't machine wash", "damp cloth"]]
+  },
+  {
+    "id": "H-009",
+    "pattern": "multi_reference",
+    "question": "How do I wash the second one?",
+    "history": [
+      "Which of your shell jackets are insulated?",
+      "The Summit Shell (SS-110) is uninsulated; the Summit Shell Insulated (SS-111) has synthetic insulation."
+    ],
+    "expected_article_ids": ["KB-104"],
+    "expected_facts": [["30"], ["dryer balls", "tumble dry"]]
+  },
+  {
+    "id": "H-010",
+    "pattern": "ellipsis",
+    "question": "What about for footwear?",
+    "history": [
+      "How long is the warranty on tents?",
+      "Basecamp tents are covered by a 5-year warranty."
+    ],
+    "expected_article_ids": ["KB-043"],
+    "expected_facts": [["1-year", "1 year", "one-year", "one year"]]
+  },
+  {
+    "id": "H-011",
+    "pattern": "small_talk",
+    "question": "Cool, bye for now",
+    "history": [
+      "Can I pay with Apple Pay?",
+      "Yes, Apple Pay is accepted at checkout."
+    ],
+    "expected_article_ids": []
+  },
+  {
+    "id": "H-012",
+    "pattern": "roles",
+    "question": "And how much does it cost?",
+    "history": [
+      {"role": "customer", "text": "How long does shipping to Australia take?"},
+      {"role": "agent", "text": "Standard shipping to Australia takes 10 to 14 business days."}
+    ],
+    "expected_article_ids": ["KB-033"],
+    "expected_facts": [["30"]]
+  }
+]

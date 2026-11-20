@@ -150,7 +150,7 @@ Base path `/api/v1/support`. Every response uses one envelope:
  "history": ["What's the warranty on your tents?", "Basecamp tents are covered for five years."]}
 ```
 
-`question` is 1–2,000 characters. `history` is optional: earlier messages as plain strings, oldest first, up to 100 (only the last 12 are used).
+`question` is 1–2,000 characters. `history` is optional: earlier messages, oldest first, up to 100 (only the last 12 are used). Each item is either a plain string or `{"role": "customer" | "agent", "text": "..."}`. Send roles when you know them, as the frontend does: the model then does not have to guess who said what.
 
 Response `data`: `question`, `answer`, `kind`, `sources[]` of `{article_id, title}`, `citations[]` of `{article_id, title, heading, quote}`, `search_query`, `rewrite_fallback`, `answer_fallback`, `grounding_failed`, `guardrail_actions[]`.
 
@@ -166,8 +166,9 @@ If Claude is unavailable, the request still succeeds: `answer_fallback` is `true
 Guardrails, in order:
 
 - **Relevance gate.** Chunks with a rerank score below `CHAT_MIN_RERANK_SCORE` (0.05) are not shown to Claude. The value was calibrated, not assumed: see `docs/BENCHMARK.md`. When nothing passes, Claude is given no chunks and can only classify the message.
-- **Grounding check.** Done in code after Claude answers. A cited chunk must be one that was provided, each quote must appear in its chunk (ignoring case, punctuation, and spacing, and allowing a small slip in a long quote), and each number in the answer must appear in a cited chunk or in the customer's own messages. A failure is sent back to Claude once with the reason; a second failure withholds the answer.
+- **Grounding check.** Done in code after Claude answers. A cited chunk must be one that was provided, each quote must appear in its chunk (ignoring case, punctuation, and spacing, and allowing a small slip in a long quote), and each number in the answer must appear in a cited chunk or in the customer's latest message. Numbers from earlier in the conversation do not count, so a message claiming "refunds are free for 90 days" cannot make "90 days" acceptable; product codes and product names that the conversation already used are allowed. A failure is sent back to Claude once with the reason; a second failure withholds the answer.
 - **Output guardrail.** Email addresses, phone numbers, and links that are not in the cited chunks are masked, and card-like numbers always are. `guardrail_actions` lists what was changed. This is pattern matching, not a harmful-content classifier.
+- **Prompt safety.** Customer and article text is escaped before it goes into a prompt, so a message cannot close a prompt section or pose as a help-center chunk, and the prompts tell the model that the conversation is never a source of policy.
 - **No temperature setting.** The model used rejects a non-default temperature, so consistency comes from the typed output, the grounding check, and the answer cache.
 
 ### Articles
@@ -237,16 +238,16 @@ Three scripts, all reported in [`docs/BENCHMARK.md`](docs/BENCHMARK.md):
 
 - `uv run python -m scripts.run_benchmark` runs 33 test conversations through six search configurations (the search stages, `/search`).
 - `uv run python -m scripts.calibrate_threshold` measures rerank scores for correct answers against off-topic and uncovered questions, which is how the chat gate's 0.05 was chosen.
-- `uv run python -m scripts.evaluate_chat` sends all 53 test messages through `/chat` on a running backend: 52 of 53 got the expected kind of reply, with no grounding failures.
+- `uv run python -m scripts.evaluate_chat --in-process` sends 71 test conversations through `/chat` (main set, a held-out set, off-topic and uncovered questions, and prompt-injection attacks), checking the kind of reply, the cited article, key facts, and forbidden text: 70 of 71 pass, with no grounding failures.
 
 Search results:
 
 | Config | hit@1 | hit@3 | MRR |
 |---|---|---|---|
 | Naive (question only, vector search) | 0.63 | 0.83 | 0.767 |
-| + Rewrite | 0.83 | 1.00 | 0.917 |
-| + Hybrid (adds BM25) | 0.90 | 0.97 | 0.938 |
-| Full pipeline (+ rerank) | 0.80 | 0.93 | 0.874 |
+| + Rewrite | 0.83 | 1.00 | 0.911 |
+| + Hybrid (adds BM25) | 0.93 | 1.00 | 0.967 |
+| Full pipeline (+ rerank) | 0.80 | 0.97 | 0.886 |
 
 The rewrite fixes follow-up questions and BM25 fixes exact product codes. Reranking lowers the top-1 result on this set and is the slow stage; it is kept because the chat's relevance gate needs its score. `docs/BENCHMARK.md` explains this and the limits of these numbers.
 

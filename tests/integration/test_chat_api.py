@@ -147,3 +147,26 @@ def test_build_answer_generator_provider_selection(
     monkeypatch.setenv("ANSWER_CACHE_PATH", str(tmp_path / "answers.json"))
     monkeypatch.setenv("LLM_BUDGET_PATH", str(tmp_path / "budget.json"))
     assert isinstance(lifespan_module.build_answer_generator(), CachedAnswerGenerator)
+
+
+def test_history_accepts_roles_and_plain_strings(
+    seeded_client: TestClient, resources: AppResources
+) -> None:
+    history = [
+        {"role": "customer", "text": "Do you ship to Canada?"},
+        {"role": "agent", "text": "Yes, we do."},
+        "and a plain string",
+    ]
+    ok(chat(seeded_client, question="How long does it take?", history=history))
+    assert resources.rewriter.calls[0][1] == [  # type: ignore[union-attr]
+        "Customer: Do you ship to Canada?",
+        "Agent: Yes, we do.",
+        "and a plain string",
+    ]
+    for bad in (
+        [{"role": "user", "text": "x"}],  # unknown role
+        [{"role": "customer"}],  # no text
+        [{"role": "customer", "text": "x", "extra": 1}],
+        [{"role": "agent", "text": "x" * 2001}],
+    ):
+        err(chat(seeded_client, question="q", history=bad), 422, "VALIDATION_ERROR")

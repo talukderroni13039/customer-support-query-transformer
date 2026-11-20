@@ -47,7 +47,10 @@ class ChatRequest(BaseModel):
     history: list[HistoryItem] = Field(
         default_factory=list,
         max_length=MAX_HISTORY_ITEMS,
-        description="Earlier messages as plain strings, oldest first. Only the last 12 are used.",
+        description=(
+            "Earlier messages, oldest first: plain strings, or {role, text} with role "
+            "'customer' or 'agent'. Only the last 12 are used."
+        ),
     )
 
 
@@ -64,7 +67,7 @@ class ContextChunk(BaseModel):
 
     @property
     def source(self) -> str:
-        return f"{self.title} > {self.heading}" if self.heading else self.title
+        return f"{self.title} / {self.heading}" if self.heading else self.title
 
     @property
     def body(self) -> str:
@@ -143,14 +146,17 @@ class GeneratedAnswer(BaseModel):
             self.answer,
             [(c.chunk_id, c.quote) for c in self.citations],
             chunks,
-            context.get("customer_text", ""),
+            context.get("question_text", ""),
+            context.get("history_text", ""),
+            context.get("titles_text", ""),
         )
         if problems:
             raise ValueError(
                 "The answer is not grounded in the provided chunks: "
                 + "; ".join(problems)
-                + ". Use only facts and numbers that are written in the chunks, quote them "
-                "exactly, or set kind=not_found."
+                + ". Fix exactly these problems and answer again: cite the chunk each fact "
+                "comes from with a quote copied word for word, and remove any statement no chunk "
+                "supports. Keep answering the question if the chunks do answer it."
             )
         return self
 

@@ -11,6 +11,12 @@ export interface ApiResponse<T> {
 
 export type AnswerKind = 'answer' | 'not_found' | 'off_topic' | 'small_talk';
 
+/** An earlier message and who wrote it, so the model does not have to guess. */
+export interface HistoryMessage {
+  role: 'customer' | 'agent';
+  text: string;
+}
+
 export interface ChatSource {
   article_id: string;
   title: string;
@@ -96,8 +102,8 @@ export class ApiService {
     return this.http.get<ApiResponse<Health>>('/health').pipe(map((r) => r.data));
   }
 
-  /** `history` is the earlier messages of this chat as plain strings, oldest first. */
-  chat(question: string, history: string[]): Observable<ChatResult> {
+  /** `history` is the earlier messages of this chat with their speaker, oldest first. */
+  chat(question: string, history: HistoryMessage[]): Observable<ChatResult> {
     return this.http
       .post<ApiResponse<ChatResult>>(`${this.base}/chat`, { question, history })
       .pipe(map((r) => r.data));

@@ -81,11 +81,11 @@ async def test_request_contains_labelled_chunks_history_and_question(tmp_path: P
     for sampling_param in ("temperature", "top_p", "top_k"):  # rejected by this model family
         assert sampling_param not in body
     user_text = str(body["messages"][0]["content"])
-    assert "[C1] Returns for Outerwear > Return window" in user_text
+    assert "[C1] Returns for Outerwear / Return window" in user_text
     assert "Jackets can be returned within 60 days of delivery." in user_text
     assert "## Return window" not in user_text  # the heading line is not repeated in the body
     assert "[C2] Shipping to Canada" in user_text
-    assert "1. Do you sell jackets?" in user_text
+    assert "- Do you sell jackets?" in user_text
     assert "What is the capital of France?" in user_text
     properties = body["tools"][0]["input_schema"]["properties"]
     assert set(properties) == {"kind", "answer", "citations"}
