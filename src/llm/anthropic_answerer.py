@@ -9,9 +9,8 @@ from src.domains.support_search.prompts.answer_prompt import (
     ANSWER_SYSTEM_PROMPT,
     build_answer_user_message,
 )
-from src.domains.support_search.schemas.chat_schemas import AnswerContextArticle, GeneratedAnswer
+from src.domains.support_search.schemas.chat_schemas import ContextChunk, GeneratedAnswer
 from src.llm.anthropic_client import (
-    DEFAULT_LLM_MAX_RETRIES,
     DEFAULT_LLM_MODEL,
     DEFAULT_TRANSPORT_RETRIES,
     BudgetedAnthropicClient,
@@ -20,12 +19,20 @@ from src.llm.call_budget import LlmCallBudget
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ANSWER_MAX_TOKENS = 700
+DEFAULT_ANSWER_MAX_TOKENS = 900
 DEFAULT_ANSWER_TIMEOUT_SECONDS = 20.0
+# One correction attempt when the answer fails the schema or the grounding check.
+DEFAULT_ANSWER_MAX_RETRIES = 1
 
 
 class AnthropicAnswerGenerator:
-    """Implements `AnswerGenerator`. Every HTTP attempt is counted by `BudgetedAnthropicClient`."""
+    """Implements `AnswerGenerator`.
+
+    The chunks are handed to the response model as validation context, so `GeneratedAnswer`
+    runs the grounding check on Claude's output. A failed check goes back to Claude once as a
+    correction request; a second failure raises `LLMOutputInvalidError`. No sampling
+    parameters are sent: this model family rejects a non-default temperature.
+    """
 
     def __init__(
         self,
@@ -34,7 +41,7 @@ class AnthropicAnswerGenerator:
         *,
         model: str = DEFAULT_LLM_MODEL,
         max_tokens: int = DEFAULT_ANSWER_MAX_TOKENS,
-        max_retries: int = DEFAULT_LLM_MAX_RETRIES,
+        max_retries: int = DEFAULT_ANSWER_MAX_RETRIES,
         timeout_seconds: float = DEFAULT_ANSWER_TIMEOUT_SECONDS,
         transport_retries: int = DEFAULT_TRANSPORT_RETRIES,
         transport: httpx.AsyncBaseTransport | None = None,
@@ -52,22 +59,27 @@ class AnthropicAnswerGenerator:
         )
 
     async def answer(
-        self, question: str, history: list[str], articles: list[AnswerContextArticle]
+        self, question: str, history: list[str], chunks: list[ContextChunk]
     ) -> GeneratedAnswer:
         started = time.perf_counter()
         result = await self._client.structured(
             GeneratedAnswer,
             system=ANSWER_SYSTEM_PROMPT,
-            user_message=build_answer_user_message(question, history, articles),
+            user_message=build_answer_user_message(question, history, chunks),
             max_tokens=self._max_tokens,
             operation="answer",
+            context={
+                "chunks": {c.label: c.checkable_text for c in chunks},
+                "customer_text": " ".join([*history, question]),
+            },
         )
         logger.info(
             "answer completed",
             extra={
                 "model": self.model,
                 "kind": result.kind.value,
-                "articles": len(articles),
+                "chunks": len(chunks),
+                "citations": len(result.citations),
                 "history_items": len(history),
                 "question_chars": len(question),
                 "answer_chars": len(result.answer),

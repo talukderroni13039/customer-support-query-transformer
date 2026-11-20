@@ -1,6 +1,6 @@
 # Sample questions for manual testing
 
-Type these into the Chat tab of the frontend (http://localhost:4200). Each message gets one answer. For the conversations, send the messages one after another in the same chat; use "Start a new chat" between conversations.
+Type these into the Chat tab of the frontend (http://localhost:4200). Each message gets one answer; click "From:" under it to see the exact quotes it is based on. For the conversations, send the messages one after another in the same chat; use "Start a new chat" between conversations.
 
 Every new message costs one Claude call (two when there is earlier conversation). Repeating the exact same message in the same position is served from the cache.
 
@@ -61,7 +61,7 @@ Expect: the SS-110, then the SS-111, then the insulated one named as warmer.
 
 ## Questions the articles do not cover
 
-These are real support questions with no article behind them. Expect the "I couldn't find that in our help articles" reply rather than a guess.
+These are real support questions with no article behind them. Expect the "I don't have that information in our help articles" reply rather than a guess.
 
 - `Do you ship to Brazil?`
 - `Can I pay with cryptocurrency?`

@@ -8,7 +8,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from src.domains.support_search.schemas.chat_schemas import AnswerContextArticle, GeneratedAnswer
+from src.domains.support_search.schemas.chat_schemas import ContextChunk, GeneratedAnswer
 from src.llm.base import AnswerGenerator
 from src.utils.hashing import stable_hash
 
@@ -18,11 +18,11 @@ DEFAULT_ANSWER_CACHE_PATH = "./data/cache/answers.json"
 
 
 class CachedAnswerGenerator:
-    """Returns a cached answer when the same question, history, and articles were seen before.
+    """Returns a cached answer when the same question, history, and chunks were seen before.
 
-    The key covers the article text, so editing an article invalidates answers built on it.
+    The key covers the chunk text, so editing an article invalidates answers built on it.
     Keys are hashes: the question and history are never written to disk, only the generated
-    answer. Failures of the inner generator are not cached.
+    answer. Only answers that passed the grounding check are cached; failures are not.
     """
 
     def __init__(self, inner: AnswerGenerator, cache_path: Path, namespace: str) -> None:
@@ -42,33 +42,36 @@ class CachedAnswerGenerator:
             return {}
         return data if isinstance(data, dict) else {}
 
-    def _key(self, question: str, history: list[str], articles: list[AnswerContextArticle]) -> str:
+    def _key(self, question: str, history: list[str], chunks: list[ContextChunk]) -> str:
         return stable_hash(
             {
                 "ns": self._namespace,
                 "question": question,
                 "history": history,
-                "articles": [[a.article_id, stable_hash(a.content)] for a in articles],
+                "chunks": [[c.label, c.chunk_id, stable_hash(c.text)] for c in chunks],
             }
         )
 
     async def answer(
-        self, question: str, history: list[str], articles: list[AnswerContextArticle]
+        self, question: str, history: list[str], chunks: list[ContextChunk]
     ) -> GeneratedAnswer:
-        key = self._key(question, history, articles)
+        key = self._key(question, history, chunks)
         entry = self._entries.get(key)
         if entry is not None:
-            return GeneratedAnswer(
-                kind=entry["kind"],
-                answer=entry["answer"],
-                source_article_ids=entry["source_article_ids"],
-                from_cache=True,
-            )
-        result = await self._inner.answer(question, history, articles)
+            try:
+                return GeneratedAnswer(
+                    kind=entry["kind"],
+                    answer=entry["answer"],
+                    citations=entry["citations"],
+                    from_cache=True,
+                )
+            except (KeyError, ValueError):
+                logger.warning("ignoring an unreadable answer cache entry")
+        result = await self._inner.answer(question, history, chunks)
         self._entries[key] = {
             "kind": result.kind.value,
             "answer": result.answer,
-            "source_article_ids": result.source_article_ids,
+            "citations": [c.model_dump() for c in result.citations],
         }
         await asyncio.to_thread(self._persist)
         return result

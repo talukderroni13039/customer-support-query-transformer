@@ -23,7 +23,7 @@ npm start          # http://localhost:4200
 
 ## What it does
 
-- **Chat tab.** One message box, like a chat assistant. Each message gets one written answer, with the help article it came from underneath. Questions that are not about the store get a short "I can only help with support" reply, and support questions the articles do not cover get a "couldn't find that" reply. Earlier messages stay on screen and are sent along as history, so follow-ups such as "what about Canada?" work. Enter sends, Shift+Enter makes a new line, and "Start a new chat" clears the conversation.
+- **Chat tab.** One message box, like a chat assistant. Each message gets one written answer. Underneath, "From:" names the help articles used and expands to show the section and exact quote behind each fact. Questions that are not about the store get a short "I can only help with support" reply, and support questions the articles do not cover get an "I don't have that information" reply. Earlier messages stay on screen and are sent along as history, so follow-ups such as "what about Canada?" work. Enter sends, Shift+Enter makes a new line, and "Start a new chat" clears the conversation.
 - **Articles tab.** Upload a `.md`, `.markdown`, or `.txt` file, review the title, category, and content, then store it. Lists stored articles and deletes them.
 
 Uploads are read in the browser and sent to `POST /api/v1/support/articles` as JSON. Only text is supported: PDF, Word, and Excel files must be converted to text first. A file may start with front matter (`title:` and `category:` between `---` lines, as in `data/kb/*.md`); otherwise the title comes from the first `# heading` or the file name. `sample-upload/tent-repair-service.md` is a ready-made file to try.

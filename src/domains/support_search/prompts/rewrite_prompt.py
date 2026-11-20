@@ -1,7 +1,7 @@
 """Prompt for the conversational query rewrite. Bump PROMPT_VERSION on any change:
 it is part of the rewrite cache key, so old cached rewrites stop being used."""
 
-PROMPT_VERSION = "v1"
+PROMPT_VERSION = "v2"
 
 REWRITE_SYSTEM_PROMPT = """\
 You prepare search queries for the support knowledge base of Northwind Gear, an outdoor \
@@ -26,6 +26,20 @@ the product type (jacket, boots, tent, backpack...) when the conversation makes 
 because policies differ by product type.
 - Copy product names, SKUs and model codes, and order numbers exactly as written, character \
 for character (for example TB-PRO-22 stays TB-PRO-22). Never alter, shorten, or invent a code.
+- Add only what the question needs. The search engine matches words, so every extra word pulls \
+in articles that merely repeat it:
+  - Never add the store name (Northwind Gear) or phrases like "at your store".
+  - When the question is about a policy or service (returns, refunds, exchanges, shipping, \
+warranty, sizing, payment), name the product by type and name only (for example "Basecamp 4 \
+tent"), and leave out its model code and descriptive words such as "waterproof" or "digital" \
+unless the policy depends on them.
+  - When the question is about the product itself (features, specifications, care, weight), \
+keep its name and model code.
+- "The first one", "the second one", "the latter" refer to the items or options under \
+discussion in the order they were introduced, not to message numbers.
+- When a follow-up replaces the subject ("And for gift orders?" after a question about \
+cancelling a regular order), ask the earlier question about the new subject only and drop \
+the old one.
 - Leave out earlier topics that the latest message is no longer about.
 - If the latest message is already clear on its own, return it nearly unchanged.
 - Do not answer the question, and do not add facts that are not in the conversation.

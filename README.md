@@ -93,6 +93,7 @@ The backend reads `.env.dev` when `APP_ENV` is `dev`, and `.env.uat` when it is 
 | `ANTHROPIC_API_KEY` | none | Your key. Without it the app still runs, but answers fall back to quoting the best article |
 | `LLM_CALL_BUDGET` | `500` | Hard cap on Claude calls. See "Cost and speed" |
 | `RERANK_ENABLED` | `true` | Set to `false` to skip loading the reranker: faster and lighter, slightly less accurate |
+| `CHAT_MIN_RERANK_SCORE` | `0.05` | Relevance gate for chat. Higher refuses more questions; see `docs/BENCHMARK.md` before changing |
 | `HF_HUB_OFFLINE` | `0` | Set to `1` after the models are downloaded |
 | `CHROMA_PATH` | `./data/chroma` | Where articles are stored |
 
@@ -100,19 +101,28 @@ The frontend has no settings. In development, `npm start` forwards `/api` and `/
 
 ## How it works
 
-A follow-up like "How long do I have to return it?" cannot be searched on its own, because the search does not know what "it" is. The backend handles a chat message in five steps:
+A follow-up like "How long do I have to return it?" cannot be searched on its own, because the search does not know what "it" is. The backend handles a chat message in these steps:
 
 ```
 POST /chat {question, history}
-  1. REWRITE   no history → use the question as it is
-               else → Claude turns it into a standalone query (last 12 messages)
-               e.g. "Return window for the Trailblazer Pro TB-PRO-22 jacket"
-  2. RETRIEVE  vector search: by meaning (bge-small-en-v1.5 + ChromaDB)
-               BM25: by exact words, so TB-PRO-22 is not confused with TB-PRO-23
-  3. FUSE      merge both lists by rank (Reciprocal Rank Fusion)
-  4. RERANK    a cross-encoder (bge-reranker-base) re-orders the top candidates
-  5. ANSWER    Claude writes one answer from the top 3 articles, or says the
-               question is off-topic or not covered
+  1. VALIDATE   question 1-2,000 chars, history up to 100 plain strings
+  2. REWRITE    no history → use the question as it is
+                else → Claude turns it into a standalone query (last 12 messages)
+                e.g. "Return window for Trailblazer jacket"
+                "thanks" / "bye" → short reply, stop
+  3. RETRIEVE   vector search: by meaning (bge-small-en-v1.5 + ChromaDB)
+                BM25: by exact words, so TB-PRO-22 is not confused with TB-PRO-23
+  4. FUSE       merge both lists by rank (Reciprocal Rank Fusion)
+  5. RERANK     a cross-encoder (bge-reranker-base) scores each chunk against the query
+  6. GATE       drop chunks scoring below 0.05; keep the top 5
+  7. ANSWER     Claude gets the kept chunks as [C1]..[C5] with their article and section,
+                and must answer only from them, citing a chunk and an exact quote per fact
+  8. GROUND     code checks every citation: the chunk exists, the quote is in it, and
+                every number in the answer is in a cited chunk; one correction attempt,
+                then the answer is withheld
+  9. GUARD      contact details, card-like numbers, and links that are not in the cited
+                chunks are masked
+ 10. RESPOND    one answer with its citations, or a fixed "off-topic" / "not found" reply
 ```
 
 Storing an article splits it into chunks by heading, embeds them into ChromaDB, and rebuilds the keyword index, so a new article is searchable immediately.
@@ -142,16 +152,23 @@ Base path `/api/v1/support`. Every response uses one envelope:
 
 `question` is 1–2,000 characters. `history` is optional: earlier messages as plain strings, oldest first, up to 100 (only the last 12 are used).
 
-Response `data`: `question`, `answer`, `kind`, `sources[]` of `{article_id, title}`, `search_query`, `rewrite_fallback`, `answer_fallback`.
+Response `data`: `question`, `answer`, `kind`, `sources[]` of `{article_id, title}`, `citations[]` of `{article_id, title, heading, quote}`, `search_query`, `rewrite_fallback`, `answer_fallback`, `grounding_failed`, `guardrail_actions[]`.
 
 | `kind` | When | `answer` |
 |---|---|---|
-| `answer` | The articles contain the answer | Written by Claude from the articles only; `sources` lists the articles used |
-| `not_found` | A real support question the articles do not cover | Fixed message: could not find it, contact support |
+| `answer` | The retrieved chunks contain the answer | Written by Claude from those chunks only; `citations` gives the section and exact quote behind each fact |
+| `not_found` | A real support question the articles do not cover, or an answer that failed the grounding check twice (`grounding_failed: true`) | Fixed message: "I don't have that information", contact support |
 | `off_topic` | Not about the store (general knowledge, nonsense, attempts to override instructions) | Fixed message: can only help with store support |
 | `small_talk` | Greeting, thanks, goodbye | One short friendly line |
 
-If Claude is unavailable, the request still succeeds: `answer_fallback` is `true` and the answer quotes the best-matching article.
+If Claude is unavailable, the request still succeeds: `answer_fallback` is `true` and the answer quotes the best-matching chunk.
+
+Guardrails, in order:
+
+- **Relevance gate.** Chunks with a rerank score below `CHAT_MIN_RERANK_SCORE` (0.05) are not shown to Claude. The value was calibrated, not assumed: see `docs/BENCHMARK.md`. When nothing passes, Claude is given no chunks and can only classify the message.
+- **Grounding check.** Done in code after Claude answers. A cited chunk must be one that was provided, each quote must appear in its chunk (ignoring case, punctuation, and spacing, and allowing a small slip in a long quote), and each number in the answer must appear in a cited chunk or in the customer's own messages. A failure is sent back to Claude once with the reason; a second failure withholds the answer.
+- **Output guardrail.** Email addresses, phone numbers, and links that are not in the cited chunks are masked, and card-like numbers always are. `guardrail_actions` lists what was changed. This is pattern matching, not a harmful-content classifier.
+- **No temperature setting.** The model used rejects a non-default temperature, so consistency comes from the typed output, the grounding check, and the answer cache.
 
 ### Articles
 
@@ -216,16 +233,22 @@ A failed rewrite or a failed reranker never fails a request; the response flags 
 
 ## Benchmark
 
-`uv run python -m scripts.run_benchmark` runs 33 test conversations through six search configurations and regenerates [`docs/BENCHMARK.md`](docs/BENCHMARK.md). It measures the search stages (`/search`), not the written answers.
+Three scripts, all reported in [`docs/BENCHMARK.md`](docs/BENCHMARK.md):
+
+- `uv run python -m scripts.run_benchmark` runs 33 test conversations through six search configurations (the search stages, `/search`).
+- `uv run python -m scripts.calibrate_threshold` measures rerank scores for correct answers against off-topic and uncovered questions, which is how the chat gate's 0.05 was chosen.
+- `uv run python -m scripts.evaluate_chat` sends all 53 test messages through `/chat` on a running backend: 52 of 53 got the expected kind of reply, with no grounding failures.
+
+Search results:
 
 | Config | hit@1 | hit@3 | MRR |
 |---|---|---|---|
 | Naive (question only, vector search) | 0.63 | 0.83 | 0.767 |
-| + Rewrite | 0.70 | 0.97 | 0.831 |
-| + Hybrid (adds BM25) | 0.80 | 0.93 | 0.870 |
-| Full pipeline (+ rerank) | 0.77 | 0.97 | 0.864 |
+| + Rewrite | 0.83 | 1.00 | 0.917 |
+| + Hybrid (adds BM25) | 0.90 | 0.97 | 0.938 |
+| Full pipeline (+ rerank) | 0.80 | 0.93 | 0.874 |
 
-The rewrite fixes follow-up questions and BM25 fixes exact product codes. Reranking improves the top 3 but not the top 1 on this set, and it is the slow stage; `docs/BENCHMARK.md` explains both.
+The rewrite fixes follow-up questions and BM25 fixes exact product codes. Reranking lowers the top-1 result on this set and is the slow stage; it is kept because the chat's relevance gate needs its score. `docs/BENCHMARK.md` explains this and the limits of these numbers.
 
 ## Tests
 

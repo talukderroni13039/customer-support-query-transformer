@@ -18,6 +18,7 @@ from src.embeddings.bge_embedder import DEFAULT_EMBEDDING_MODEL, BgeEmbedder
 from src.keyword_search.base import KeywordIndex
 from src.keyword_search.bm25_index import BM25Index
 from src.llm.anthropic_answerer import (
+    DEFAULT_ANSWER_MAX_RETRIES,
     DEFAULT_ANSWER_MAX_TOKENS,
     DEFAULT_ANSWER_TIMEOUT_SECONDS,
     AnthropicAnswerGenerator,
@@ -113,7 +114,7 @@ def build_answer_generator() -> AnswerGenerator | None:
         budget=_call_budget(),
         model=model,
         max_tokens=env_int("LLM_ANSWER_MAX_TOKENS", DEFAULT_ANSWER_MAX_TOKENS),
-        max_retries=env_int("LLM_MAX_RETRIES", DEFAULT_LLM_MAX_RETRIES),
+        max_retries=env_int("LLM_ANSWER_MAX_RETRIES", DEFAULT_ANSWER_MAX_RETRIES),
         timeout_seconds=env_float("LLM_ANSWER_TIMEOUT_SECONDS", DEFAULT_ANSWER_TIMEOUT_SECONDS),
     )
     return CachedAnswerGenerator(

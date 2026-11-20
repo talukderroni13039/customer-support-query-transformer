@@ -60,3 +60,11 @@ class LLMBudgetExhaustedError(LLMError):
     status_code = 502
     code = "LLM_BUDGET_EXHAUSTED"
     message = "LLM budget exhausted."
+
+
+class LLMOutputInvalidError(LLMError):
+    """The model's output failed validation (schema or grounding check) on every attempt."""
+
+    status_code = 502
+    code = "LLM_OUTPUT_INVALID"
+    message = "The LLM output failed validation."

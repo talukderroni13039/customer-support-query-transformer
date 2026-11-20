@@ -36,13 +36,23 @@
             [class.error]="message.kind === 'error'"
           >
             <p class="text">{{ message.text }}</p>
-            @if (message.sources?.length) {
-              <p class="sources">
-                From:
-                @for (source of message.sources; track source.article_id; let last = $last) {
-                  {{ source.title }}{{ last ? '' : ' · ' }}
-                }
-              </p>
+            @if (message.citations?.length) {
+              <details class="sources">
+                <summary>
+                  From:
+                  @for (source of message.sources; track source.article_id; let last = $last) {
+                    {{ source.title }}{{ last ? '' : ' · ' }}
+                  }
+                </summary>
+                <ul>
+                  @for (citation of message.citations; track $index) {
+                    <li>
+                      <span class="where">{{ citation.title }}{{ citation.heading ? ' › ' + citation.heading : '' }}</span>
+                      <q>{{ citation.quote }}</q>
+                    </li>
+                  }
+                </ul>
+              </details>
             }
           </div>
         </div>

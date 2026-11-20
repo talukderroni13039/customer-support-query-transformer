@@ -6,11 +6,13 @@ from src.domains.support_search.schemas.article_schemas import (
     ArticleUpdate,
 )
 from src.domains.support_search.schemas.chat_schemas import (
-    AnswerContextArticle,
     AnswerKind,
+    ChatCitation,
     ChatRequest,
     ChatResult,
     ChatSource,
+    Citation,
+    ContextChunk,
     GeneratedAnswer,
 )
 from src.domains.support_search.schemas.rewrite_schemas import RewrittenQuery
@@ -25,16 +27,18 @@ from src.domains.support_search.schemas.search_schemas import (
 )
 
 __all__ = [
-    "AnswerContextArticle",
     "AnswerKind",
     "ArticleCreate",
     "ArticleDeleteResult",
     "ArticleResult",
     "ArticleSummary",
     "ArticleUpdate",
+    "ChatCitation",
     "ChatRequest",
     "ChatResult",
     "ChatSource",
+    "Citation",
+    "ContextChunk",
     "GeneratedAnswer",
     "QueryMode",
     "RetrievalMode",

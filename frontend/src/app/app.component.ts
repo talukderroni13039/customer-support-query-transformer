@@ -1,7 +1,15 @@
 import { AfterViewChecked, Component, ElementRef, OnInit, ViewChild, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 
-import { AnswerKind, ApiService, ArticleCreate, ArticleSummary, ChatSource, describeError } from './api.service';
+import {
+  AnswerKind,
+  ApiService,
+  ArticleCreate,
+  ArticleSummary,
+  ChatCitation,
+  ChatSource,
+  describeError,
+} from './api.service';
 import { ACCEPTED_EXTENSIONS, MAX_CONTENT_CHARS, hasAcceptedExtension, parseArticleFile } from './article-file';
 
 interface ChatMessage {
@@ -9,6 +17,7 @@ interface ChatMessage {
   text: string;
   kind?: AnswerKind | 'error';
   sources?: ChatSource[];
+  citations?: ChatCitation[];
 }
 
 // Limits of the chat endpoint: each history item up to 2000 characters, 100 items.
@@ -106,7 +115,13 @@ export class AppComponent implements OnInit, AfterViewChecked {
       next: (result) => {
         this.messages.update((list) => [
           ...list,
-          { role: 'assistant', text: result.answer, kind: result.kind, sources: result.sources },
+          {
+            role: 'assistant',
+            text: result.answer,
+            kind: result.kind,
+            sources: result.sources,
+            citations: result.citations,
+          },
         ]);
         this.thinking.set(false);
         this.scrollPending = true;

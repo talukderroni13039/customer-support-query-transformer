@@ -6,9 +6,14 @@ from typing import Any
 import anthropic
 import httpx
 import instructor
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
-from src.core.exceptions import LLMBudgetExhaustedError, LLMError, LLMTimeoutError
+from src.core.exceptions import (
+    LLMBudgetExhaustedError,
+    LLMError,
+    LLMOutputInvalidError,
+    LLMTimeoutError,
+)
 from src.llm.call_budget import LlmCallBudget
 
 logger = logging.getLogger(__name__)
@@ -79,13 +84,21 @@ class BudgetedAnthropicClient:
         user_message: str,
         max_tokens: int,
         operation: str,
+        context: dict[str, Any] | None = None,
+        max_retries: int | None = None,
     ) -> T:
-        """One structured call. Raises `LLMError` subclasses; never logs prompt or model text."""
+        """One structured call. Raises `LLMError` subclasses; never logs prompt or model text.
+
+        `context` is passed to the response model's validators (Pydantic validation context),
+        so a model can check its own output against data the caller supplies. A validation
+        failure is sent back to Claude as a correction request, up to `max_retries` times.
+        """
         self._budget.ensure_available()  # refuse before building any request
         try:
             result: T = await self._client.create(
                 response_model=response_model,
-                max_retries=self._max_retries,
+                max_retries=self._max_retries if max_retries is None else max_retries,
+                context=context,
                 model=self.model,
                 max_tokens=max_tokens,
                 system=system,
@@ -108,6 +121,8 @@ class BudgetedAnthropicClient:
                 isinstance(e, anthropic.APITimeoutError | httpx.TimeoutException) for e in chain
             ):
                 raise LLMTimeoutError() from exc
+            if any(isinstance(e, ValidationError) for e in chain):
+                raise LLMOutputInvalidError() from exc
             status = f", HTTP {status_code}" if status_code else ""
             raise LLMError(
                 f"The LLM provider returned an error during {operation} ({cause}{status}).",

@@ -42,6 +42,7 @@ docker run --rm -p 8000:8000 --env-file .env.uat -v sqt-chroma:/app/data/chroma 
 - **Rerank:** at most `RERANK_CANDIDATES` chunks (`select_rerank_pool`: the top chunks, made article-diverse only when needed to reach `top_k`); error → keep prior order + `rerank_fallback=true`. `RERANK_MIN_SCORE` is off by default; do not turn it on without benchmark evidence.
 - Request switches (`top_k`, `rerank`, `include_debug`) are strict types; never loosen them to coercing types.
 - **Grouping** (`support_search_service.py`): best chunk per article → `top_k` articles.
+- **Chat** (`support_chat_service.py`): rewrite → hybrid → rerank → gate (`CHAT_MIN_RERANK_SCORE`, calibrated with `scripts/calibrate_threshold.py`) → top 5 chunks as C1..C5 → Claude answers with a chunk label and exact quote per fact → grounding check (`utils/grounding.py`, run inside `GeneratedAnswer` via validation context, one correction attempt) → output guardrail (`utils/output_guard.py`). Never show an answer that failed the grounding check; never send a temperature.
 - `ChunkHit` is the one shape passed between stages. `score_type` says which stage produced `score` (`cosine` / `bm25` / `rrf` / `rerank`).
 - **Any article write (create/update/delete/seed) must rebuild BM25** from ChromaDB (atomic swap, under the index write lock).
 - CPU-bound work (embedding, Chroma calls, BM25 search/rebuild, reranking) always runs via `asyncio.to_thread`.

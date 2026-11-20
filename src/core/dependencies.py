@@ -18,7 +18,11 @@ from src.domains.support_search.services.retrieval_service import (
     DEFAULT_RERANK_MIN_SCORE,
     RetrievalService,
 )
-from src.domains.support_search.services.support_chat_service import SupportChatService
+from src.domains.support_search.services.support_chat_service import (
+    DEFAULT_CHAT_CONTEXT_CHUNKS,
+    DEFAULT_CHAT_MIN_RERANK_SCORE,
+    SupportChatService,
+)
 from src.domains.support_search.services.support_search_service import (
     DEFAULT_TOP_K,
     SupportSearchService,
@@ -134,16 +138,16 @@ def get_answer_generator(resources: ResourcesDep) -> AnswerGenerator | None:
 
 
 def get_support_chat_service(
-    search_service: Annotated[SupportSearchService, Depends(get_support_search_service)],
     query_service: Annotated[QueryService, Depends(get_query_service)],
-    vector_store: Annotated[VectorStore, Depends(get_vector_store)],
+    retrieval_service: Annotated[RetrievalService, Depends(get_retrieval_service)],
+    keyword_index: Annotated[KeywordIndex, Depends(get_keyword_index)],
     answer_generator: Annotated[AnswerGenerator | None, Depends(get_answer_generator)],
-    reranker: Annotated[Reranker | None, Depends(get_reranker)],
 ) -> SupportChatService:
     return SupportChatService(
-        search_service=search_service,
         query_service=query_service,
-        vector_store=vector_store,
+        retrieval_service=retrieval_service,
+        keyword_index=keyword_index,
         answer_generator=answer_generator,
-        rerank_available=reranker is not None,
+        min_rerank_score=env_float("CHAT_MIN_RERANK_SCORE", DEFAULT_CHAT_MIN_RERANK_SCORE),
+        max_context_chunks=env_int("CHAT_CONTEXT_CHUNKS", DEFAULT_CHAT_CONTEXT_CHUNKS),
     )

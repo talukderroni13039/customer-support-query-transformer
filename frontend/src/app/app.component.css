@@ -134,6 +134,20 @@
   color: var(--muted);
   font-size: 12px;
 }
+.sources summary {
+  cursor: pointer;
+}
+.sources ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+.sources li {
+  margin-bottom: 4px;
+}
+.sources .where {
+  display: block;
+  font-weight: 600;
+}
 
 .composer {
   display: flex;

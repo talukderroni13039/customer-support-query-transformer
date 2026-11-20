@@ -16,14 +16,25 @@ export interface ChatSource {
   title: string;
 }
 
+/** One fact in the answer: the article section it comes from and the exact words. */
+export interface ChatCitation {
+  article_id: string;
+  title: string;
+  heading: string;
+  quote: string;
+}
+
 export interface ChatResult {
   question: string;
   answer: string;
   kind: AnswerKind;
   sources: ChatSource[];
+  citations: ChatCitation[];
   search_query: string;
   rewrite_fallback: boolean;
   answer_fallback: boolean;
+  grounding_failed: boolean;
+  guardrail_actions: string[];
 }
 
 export interface ArticleSummary {
